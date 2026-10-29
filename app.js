@@ -93,10 +93,8 @@ const DOM = {
     textOverlay: document.getElementById('text-overlay-element'),
     btnApplyText: document.getElementById('btn-apply-text'),
     btnCancelText: document.getElementById('btn-cancel-text'),
-    presetTextBtns: document.querySelectorAll('.preset-text-btn'),
     
     // UI Elements
-    themeSelector: document.getElementById('theme-selector'),
     toolCursor: document.getElementById('tool-cursor'),
     loadingOverlay: document.getElementById('loading-overlay'),
     loadingText: document.getElementById('loading-text'),
@@ -159,6 +157,10 @@ navItems.forEach(item => {
             item.classList.add('active');
             const targetId = item.getAttribute('data-target');
             document.getElementById(targetId).classList.add('active');
+            if (targetId === 'panel-ajustes') {
+                const activeBtn = document.querySelector('.adj-btn.active') || document.querySelector('.adj-btn');
+                showAdjustment(activeBtn.getAttribute('data-target'));
+            }
         }
     });
 });
@@ -186,40 +188,90 @@ toolPanelsContainer.addEventListener('touchend', e => {
     }
 });
 
-// Horizontal Adjustments Toolbar Logic
+// Barra de Ajustes: al pulsar un ajuste se muestra SOLO su deslizador
+function showAdjustment(targetId) {
+    DOM.adjustmentsSettings.classList.remove('hidden');
+    DOM.adjustmentsSettings.querySelectorAll('.control-item').forEach(el => {
+        el.classList.toggle('hidden', el.id !== targetId);
+    });
+    document.querySelectorAll('.adj-btn').forEach(b => b.classList.toggle('active', b.getAttribute('data-target') === targetId));
+}
+
 document.querySelectorAll('.adj-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-        // Find closest button in case icon is clicked
-        const targetBtn = e.target.closest('.adj-btn');
-        if (!targetBtn) return;
-        
-        // Remove active class from all buttons
-        document.querySelectorAll('.adj-btn').forEach(b => b.classList.remove('active'));
-        targetBtn.classList.add('active');
-        
-        // Hide all sliders
-        [DOM.adjustmentsSettings, DOM.brushSettings, DOM.cropSettings, DOM.textSettings].forEach(el => {
-            if (el) el.classList.add('hidden');
-        });
-        
-        // Show target slider
-        const targetId = targetBtn.getAttribute('data-target');
-        const targetElement = document.getElementById(targetId);
-        if (targetElement) {
-            targetElement.classList.remove('hidden');
-        }
+    btn.addEventListener('click', () => {
+        if (typeof currentTool !== 'undefined' && currentTool) toggleTool(currentTool);
+        showAdjustment(btn.getAttribute('data-target'));
+    });
+});
+
+// Punto en los ajustes que se han cambiado (para saber cuáles están tocados)
+function markChangedAdjustments() {
+    document.querySelectorAll('.adj-btn').forEach(b => {
+        const item = document.getElementById(b.getAttribute('data-target'));
+        const input = item && item.querySelector('input[type=range]');
+        b.classList.toggle('changed', !!input && parseInt(input.value) !== 0);
+    });
+}
+
+// Tocar dos veces el nombre de un ajuste lo devuelve a 0
+document.querySelectorAll('#adjustments-sliders-container .label-row').forEach(row => {
+    row.addEventListener('dblclick', () => {
+        const input = row.parentElement.querySelector('input[type=range]');
+        if (!input) return;
+        input.value = 0;
+        input.dispatchEvent(new Event('input'));
     });
 });
 
 // App Reset (Home Button & Exit Button)
 function resetApp() {
-    if (hasImage) {
-        showConfirmModal('Salir y borrar', '¿Seguro que quieres borrar la foto actual y volver al inicio?', () => location.reload());
-    } else {
-        location.reload();
-    }
+    // "Salir y Borrar" (pestaña Exportar): pide confirmación y quita la foto
+    if (hasImage) DOM.modalReset.classList.add('active');
 }
-DOM.logoTitle.addEventListener('click', resetApp);
+// Al pulsar el logo: ir al principio, salir o cancelar
+(function setupHomeMenu() {
+    const modal = document.getElementById('home-modal');
+    if (!modal) { DOM.logoTitle.addEventListener('click', resetApp); return; }
+    const close = () => modal.classList.remove('active');
+    DOM.logoTitle.addEventListener('click', () => {
+        if (typeof playClickSound === 'function') playClickSound();
+        modal.classList.add('active');
+    });
+    document.getElementById('home-cancel').addEventListener('click', close);
+    modal.addEventListener('click', e => { if (e.target === modal) close(); });
+
+    // Ir al principio: vuelve la pantalla de inicio (la foto y los cambios se conservan)
+    document.getElementById('home-go-start').addEventListener('click', () => {
+        close();
+        if (currentTool) toggleTool(currentTool);
+        const splash = document.getElementById('splash-screen');
+        if (!splash) return;
+        splash.classList.remove('hidden');
+        splash.style.pointerEvents = 'none';
+        splash.style.opacity = '0';
+        // reiniciar la animación del logo
+        splash.querySelectorAll('.splash-logo, .splash-title').forEach(el => {
+            el.style.animation = 'none'; void el.offsetWidth; el.style.animation = '';
+        });
+        requestAnimationFrame(() => { splash.style.opacity = '1'; });
+        // esperar un poco para que el mismo toque no la cierre enseguida
+        setTimeout(() => { splash.style.pointerEvents = 'auto'; }, 450);
+    });
+
+    // Salir: los navegadores solo dejan cerrar la ventana si la abrió la propia app;
+    // si no se puede, se muestra una pantalla de despedida y se borra la foto.
+    document.getElementById('home-exit').addEventListener('click', () => {
+        close();
+        try { window.close(); } catch (e) {}
+        setTimeout(() => {
+            if (window.closed) return;
+            const bye = document.getElementById('bye-screen');
+            if (bye) bye.classList.remove('hidden');
+        }, 250);
+    });
+    const reopen = document.getElementById('bye-reopen');
+    if (reopen) reopen.addEventListener('click', () => location.reload());
+})();
 if (DOM.btnExit) {
     DOM.btnExit.addEventListener('click', resetApp);
 }
@@ -378,27 +430,48 @@ DOM.btnCancelReset.addEventListener('click', () => {
     DOM.modalReset.classList.remove('active');
 });
 
+// Quitar la foto y volver a la pantalla de "Subir Foto" (Ajustes, Herramientas, Exportar)
+function clearPhoto() {
+    if (currentTool) toggleTool(currentTool);
+    document.querySelectorAll('.custom-modal-overlay.active').forEach(m => m.classList.remove('active'));
+
+    hasImage = false;
+    originalImageData = null;
+    currentImageData = null;
+    currentImageInfo = null;
+    history = [];
+    historyIndex = -1;
+    if (typeof skinCache !== 'undefined') skinCache = null;
+    if (typeof whitenCache !== 'undefined') whitenCache = null;
+
+    [DOM.mainCanvas, DOM.originalCanvas, DOM.maskCanvas].forEach(c => { c.width = 0; c.height = 0; });
+    const flash = document.getElementById('flash-canvas');
+    if (flash) { flash.width = 0; flash.height = 0; }
+    DOM.originalCanvas.classList.add('hidden');
+    DOM.mainCanvas.classList.remove('hidden');
+    DOM.cropOverlay.classList.add('hidden');
+    if (DOM.textOverlay) DOM.textOverlay.classList.add('hidden');
+    if (DOM.textInput) DOM.textInput.value = '';
+
+    resetAdjustments();
+    DOM.placeholder.classList.remove('hidden');
+    DOM.canvasContainer.classList.remove('has-image');
+
+    // Cerrar el panel inferior y desactivar los botones de arriba
+    toolPanelsContainer.classList.add('closed');
+    navItems.forEach(nav => nav.classList.remove('active'));
+    panels.forEach(panel => panel.classList.remove('active'));
+    document.querySelectorAll('.history-actions .history-btn').forEach(btn => btn.disabled = true);
+    DOM.upload.value = '';
+    showToast('Foto borrada. Puedes subir otra');
+}
+window.clearPhoto = clearPhoto;
+
 DOM.btnConfirmReset.addEventListener('click', () => {
     DOM.modalReset.classList.remove('active');
-    
-    // Restablecer deslizadores
-    DOM.sBrightness.value = 0;
-    DOM.sContrast.value = 0;
-    DOM.sTemp.value = 0;
-    DOM.sBlackPoint.value = 0;
-    DOM.sWhites.value = 0;
-    DOM.sClarity.value = 0;
-    DOM.sHaze.value = 0;
-    
-    if (history.length > 0) {
-        historyIndex = 0;
-        restoreState(0);
-        saveState("Imagen Original");
-    } else {
-        updateDisplayValues();
-        applyAdjustments();
-    }
+    clearPhoto();
 });
+DOM.modalReset.addEventListener('click', e => { if (e.target === DOM.modalReset) DOM.modalReset.classList.remove('active'); });
 
 // --- Image Loading ---
 
@@ -575,6 +648,7 @@ function updateDisplayValues() {
     DOM.vClarity.textContent = DOM.sClarity.value;
     DOM.vHaze.textContent = DOM.sHaze.value;
     DOM.vBrushSize.textContent = DOM.sBrushSize.value + 'px';
+    if (typeof markChangedAdjustments === 'function') markChangedAdjustments();
 }
 
 function applyAdjustments() {
@@ -761,122 +835,394 @@ DOM.btnClone.addEventListener('click', () => toggleTool('clone'));
             toggleTool('text');
         });
     }
+    // ---------- PIEL PERFECTA ----------
+    // Al abrir la herramienta se buscan las caras con la IA y se prepara una máscara de piel
+    // (sin ojos, cejas ni boca) y una versión suavizada de la foto. El deslizador solo mezcla ambas.
+    let skinCache = null;
+    let skinPreparing = false;
+
+    function skinColorScore(r, g, b) {
+        if (typeof window.skinLikeness === 'function') return window.skinLikeness(r, g, b);
+        const y = 0.299 * r + 0.587 * g + 0.114 * b;
+        const cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
+        const cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
+        return (y > 35 && cr > 133 && cr < 180 && cb > 75 && cb < 130) ? 1 : 0;
+    }
+
+    function buildSkinCache(ctxSource, detected) {
+        const w = ctxSource.canvas.width, h = ctxSource.canvas.height;
+        const base = ctxSource.getImageData(0, 0, w, h).data;
+        let mask = detected && detected.mask;
+        if (!mask) {
+            // Sin cara detectada: se suaviza lo que tiene color de piel
+            mask = new Float32Array(w * h);
+            for (let i = 0, j = 0; i < mask.length; i++, j += 4) mask[i] = skinColorScore(base[j], base[j + 1], base[j + 2]) * 0.8;
+        }
+        // Radio del suavizado según el tamaño de la cara (o de la foto)
+        const ref = (detected && detected.faceSize) || Math.max(w, h) / 4;
+        const radius = Math.max(3, Math.round(ref / 28));
+        const bc = document.createElement('canvas');
+        bc.width = w; bc.height = h;
+        const bx = bc.getContext('2d');
+        bx.filter = `blur(${radius}px)`;
+        bx.drawImage(ctxSource.canvas, 0, 0);
+        const blur = bx.getImageData(0, 0, w, h).data;
+
+        // Suavizado que respeta los bordes marcados (contorno de nariz, pelo, gafas...)
+        const smooth = new Uint8ClampedArray(base.length);
+        for (let j = 0; j < base.length; j += 4) {
+            const l1 = 0.299 * base[j] + 0.587 * base[j + 1] + 0.114 * base[j + 2];
+            const l2 = 0.299 * blur[j] + 0.587 * blur[j + 1] + 0.114 * blur[j + 2];
+            const d = Math.abs(l1 - l2);
+            const keep = d < 12 ? 1 : d > 45 ? 0 : 1 - (d - 12) / 33;
+            smooth[j] = base[j] + (blur[j] - base[j]) * keep;
+            smooth[j + 1] = base[j + 1] + (blur[j + 1] - base[j + 1]) * keep;
+            smooth[j + 2] = base[j + 2] + (blur[j + 2] - base[j + 2]) * keep;
+            smooth[j + 3] = 255;
+        }
+        return { w, h, base, smooth, mask, faces: detected ? detected.faces : 0 };
+    }
+
     function applySmartSkinSmoothing(ctxTarget, intensity) {
         if (intensity <= 0) return;
-        const w = ctxTarget.canvas.width;
-        const h = ctxTarget.canvas.height;
-        
-        const blurCanvas = document.createElement('canvas');
-        blurCanvas.width = w; blurCanvas.height = h;
-        const bCtx = blurCanvas.getContext('2d');
-        // Aumentar el blur para que alise más (w/150)
-        bCtx.filter = `blur(${Math.max(3, w/150)}px)`;
-        bCtx.drawImage(ctxTarget.canvas, 0, 0);
-        bCtx.filter = 'none';
-
-        const origData = ctxTarget.getImageData(0, 0, w, h);
-        const blurData = bCtx.getImageData(0, 0, w, h);
-        const outData = new ImageData(new Uint8ClampedArray(origData.data), w, h);
-        const strength = intensity / 100;
-        
-        for (let i = 0; i < origData.data.length; i += 4) {
-            const r1 = origData.data[i], g1 = origData.data[i+1], b1 = origData.data[i+2];
-            const r2 = blurData.data[i], g2 = blurData.data[i+1], b2 = blurData.data[i+2];
-            
-            const l1 = 0.299 * r1 + 0.587 * g1 + 0.114 * b1;
-            const l2 = 0.299 * r2 + 0.587 * g2 + 0.114 * b2;
-            const diff = Math.abs(l1 - l2);
-            
-            // Aumentar la tolerancia de bordes (diff/30) para que afecte a más piel
-            let blurWeight = Math.max(0, 1 - (diff / 30)); 
-            blurWeight *= (strength * 1.5); // Multiplicador para que llegue al 100% real de blur
-            if (blurWeight > 1) blurWeight = 1;
-            
-            outData.data[i] = r1 * (1 - blurWeight) + r2 * blurWeight;
-            outData.data[i+1] = g1 * (1 - blurWeight) + g2 * blurWeight;
-            outData.data[i+2] = b1 * (1 - blurWeight) + b2 * blurWeight;
+        const w = ctxTarget.canvas.width, h = ctxTarget.canvas.height;
+        let cache = skinCache;
+        if (!cache || cache.w !== w || cache.h !== h) cache = buildSkinCache(ctxTarget, null);
+        const k = Math.min(1, intensity / 100);
+        const amount = k * 0.95;                // al 100% queda un 5% de textura natural
+        const glow = k * 10;                    // piel un poco más luminosa
+        const out = ctxTarget.createImageData(w, h);
+        const o = out.data, base = cache.base, sm = cache.smooth, mask = cache.mask;
+        for (let i = 0, j = 0; i < mask.length; i++, j += 4) {
+            const m = mask[i];
+            if (m <= 0.01) { o[j] = base[j]; o[j + 1] = base[j + 1]; o[j + 2] = base[j + 2]; o[j + 3] = 255; continue; }
+            const a = m * amount, g = m * glow;
+            o[j] = base[j] + (sm[j] - base[j]) * a + g;
+            o[j + 1] = base[j + 1] + (sm[j + 1] - base[j + 1]) * a + g * 0.9;
+            o[j + 2] = base[j + 2] + (sm[j + 2] - base[j + 2]) * a + g * 0.8;
+            o[j + 3] = 255;
         }
-        
-        ctxTarget.putImageData(outData, 0, 0);
-        
-        // Ligero brillo global
-        ctxTarget.globalCompositeOperation = 'soft-light';
-        ctxTarget.globalAlpha = 0.15 * strength;
-        ctxTarget.fillStyle = '#ffaa66';
-        ctxTarget.fillRect(0, 0, w, h);
-        ctxTarget.globalCompositeOperation = 'source-over';
-        ctxTarget.globalAlpha = 1.0;
+        ctxTarget.putImageData(out, 0, 0);
+    }
+
+    // Enseña un momento en color la zona encontrada (en una capa aparte, sin tocar lo pintado)
+    function getFlashCanvas() {
+        let fc = document.getElementById('flash-canvas');
+        if (!fc) {
+            fc = document.createElement('canvas');
+            fc.id = 'flash-canvas';
+            DOM.maskCanvas.after(fc);
+        }
+        return fc;
+    }
+    function flashMask(mask, w, h, rgb = [255, 90, 140]) {
+        if (!mask) return;
+        const fc = getFlashCanvas();
+        fc.width = w; fc.height = h;
+        const fctx = fc.getContext('2d');
+        const img = fctx.createImageData(w, h);
+        for (let i = 0, j = 0; i < mask.length; i++, j += 4) {
+            if (mask[i] <= 0.02) continue;
+            img.data[j] = rgb[0]; img.data[j + 1] = rgb[1]; img.data[j + 2] = rgb[2]; img.data[j + 3] = Math.min(255, mask[i] * 170);
+        }
+        fctx.putImageData(img, 0, 0);
+        fc.classList.remove('fade');
+        fc.style.opacity = '1';
+        clearTimeout(flashMask.t1); clearTimeout(flashMask.t2);
+        flashMask.t1 = setTimeout(() => { fc.classList.add('fade'); fc.style.opacity = '0'; }, 1300);
+        flashMask.t2 = setTimeout(() => fctx.clearRect(0, 0, w, h), 2300);
+    }
+    function flashSkinMask(cache) {
+        if (cache) flashMask(cache.mask, cache.w, cache.h);
+    }
+
+    async function prepareSkinTool() {
+        skinCache = null;
+        skinPreparing = true;
+        DOM.adjMagicIntensity.disabled = true;
+        DOM.loadingOverlay.classList.remove('hidden');
+        DOM.loadingText.textContent = "Buscando caras...";
+        await new Promise(r => setTimeout(r, 30));
+        let detected = null;
+        try {
+            if (typeof window.detectSkinMask === 'function') detected = await window.detectSkinMask(DOM.mainCanvas);
+        } catch (err) {
+            console.warn('No se pudo detectar la cara', err);
+        }
+        if (currentTool !== 'magic-skin') {   // el usuario salió mientras tanto
+            skinPreparing = false;
+            DOM.adjMagicIntensity.disabled = false;
+            DOM.loadingOverlay.classList.add('hidden');
+            return;
+        }
+        DOM.loadingText.textContent = "Preparando la piel...";
+        await new Promise(r => setTimeout(r, 30));
+        skinCache = buildSkinCache(ctx, detected && detected.mask ? detected : null);
+        skinPreparing = false;
+        DOM.adjMagicIntensity.disabled = false;
+        DOM.loadingOverlay.classList.add('hidden');
+        DOM.loadingText.textContent = "Cargando...";
+
+        if (detected && detected.faces > 0) {
+            showToast(detected.faces === 1 ? "Cara encontrada ✓" : `${detected.faces} caras encontradas ✓`);
+        } else {
+            showToast("No he encontrado ninguna cara: se suaviza lo que tiene color de piel");
+        }
+        flashSkinMask(skinCache);
+        // Empezar con un suavizado medio para que se note
+        DOM.adjMagicIntensity.value = 50;
+        DOM.valMagicIntensity.textContent = 50;
+        applyAdjustments();
+    }
+
+    // ---------- DIENTES Y OJOS ----------
+    // Al abrir la herramienta la IA busca la boca y los ojos y prepara una máscara automática.
+    // Además se puede pintar con el dedo para añadir zonas que falten.
+    let whitenCache = null;
+
+    function ycc(r, g, b) {
+        return [0.299 * r + 0.587 * g + 0.114 * b, 128 - 0.168736 * r - 0.331264 * g + 0.5 * b, 128 + 0.5 * r - 0.418688 * g - 0.081312 * b];
+    }
+
+    function polyMask(w, h, polys, blurPx, circlesOut) {
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        const x = c.getContext('2d');
+        x.fillStyle = '#fff';
+        polys.forEach(pts => {
+            x.beginPath();
+            pts.forEach((p, i) => i ? x.lineTo(p.x, p.y) : x.moveTo(p.x, p.y));
+            x.closePath(); x.fill();
+        });
+        if (circlesOut) {
+            x.globalCompositeOperation = 'destination-out';
+            circlesOut.forEach(ci => { x.beginPath(); x.arc(ci.x, ci.y, ci.r * 1.08, 0, Math.PI * 2); x.fill(); });
+            x.globalCompositeOperation = 'source-over';
+        }
+        let src = c;
+        if (blurPx > 0) {
+            const b = document.createElement('canvas');
+            b.width = w; b.height = h;
+            const bx = b.getContext('2d');
+            bx.filter = `blur(${blurPx}px)`;
+            bx.drawImage(c, 0, 0);
+            src = b;
+        }
+        const d = src.getContext('2d').getImageData(0, 0, w, h).data;
+        const m = new Float32Array(w * h);
+        for (let i = 0; i < m.length; i++) m[i] = d[i * 4 + 3] / 255;
+        return m;
+    }
+
+    function buildWhitenCache(type, faces) {
+        const w = DOM.mainCanvas.width, h = DOM.mainCanvas.height;
+        const px = ctx.getImageData(0, 0, w, h).data;
+        const mask = new Float32Array(w * h);
+        let iris = null;
+        if (!faces || !faces.length) return { type, w, h, mask: null, iris: null, faces: 0 };
+
+        if (type === 'teeth') {
+            const mouthW = Math.max(...faces.map(f => Math.max(...f.mouth.map(p => p.x)) - Math.min(...f.mouth.map(p => p.x))));
+            const poly = polyMask(w, h, faces.map(f => f.mouth), Math.max(1, Math.round(mouthW / 60)));
+            for (let i = 0, j = 0; i < mask.length; i++, j += 4) {
+                if (poly[i] <= 0) continue;
+                const [y, , cr] = ycc(px[j], px[j + 1], px[j + 2]);
+                // Los dientes son claros y poco rojos (así no se blanquean labios, encías ni lengua)
+                const bright = Math.min(1, Math.max(0, (y - 60) / 55));
+                const notRed = Math.min(1, Math.max(0, 1 - (cr - 148) / 16));
+                mask[i] = poly[i] * bright * notRed;
+            }
+        } else {
+            const irises = faces.flatMap(f => f.irises);
+            const eyeW = Math.max(...faces.map(f => Math.max(...f.leftEye.map(p => p.x)) - Math.min(...f.leftEye.map(p => p.x))));
+            const eyesPoly = faces.flatMap(f => [f.leftEye, f.rightEye]);
+            const sclera = polyMask(w, h, eyesPoly, Math.max(1, Math.round(eyeW / 40)), irises);
+            for (let i = 0, j = 0; i < mask.length; i++, j += 4) {
+                if (sclera[i] <= 0) continue;
+                const [y] = ycc(px[j], px[j + 1], px[j + 2]);
+                mask[i] = sclera[i] * Math.min(1, Math.max(0, (y - 50) / 50));   // solo lo blanco del ojo
+            }
+            if (irises.length) {
+                // Iris: dentro del círculo y dentro del ojo
+                const eyeHard = polyMask(w, h, eyesPoly, 0);
+                const circ = document.createElement('canvas');
+                circ.width = w; circ.height = h;
+                const cx = circ.getContext('2d');
+                cx.fillStyle = '#fff';
+                irises.forEach(ci => { cx.beginPath(); cx.arc(ci.x, ci.y, ci.r, 0, Math.PI * 2); cx.fill(); });
+                const cd = cx.getImageData(0, 0, w, h).data;
+                iris = new Float32Array(w * h);
+                for (let i = 0; i < iris.length; i++) iris[i] = (cd[i * 4 + 3] / 255) * eyeHard[i];
+            }
+        }
+        return { type, w, h, mask, iris, faces: faces.length };
     }
 
     function applySmartWhiten(ctxTarget, intensity, type) {
         if (intensity <= 0) return;
-        const w = ctxTarget.canvas.width;
-        const h = ctxTarget.canvas.height;
-        
+        const w = ctxTarget.canvas.width, h = ctxTarget.canvas.height;
         const imgData = ctxTarget.getImageData(0, 0, w, h);
         const data = imgData.data;
-        const strength = (intensity / 100);
-        // Obtenemos los datos de la máscara dibujada por el usuario
-        const maskData = maskCtx.getImageData(0, 0, w, h).data;
-            
-        for (let i = 0; i < data.length; i += 4) {
-            // Check if user painted here (alpha channel of mask > 0)
-            const maskAlpha = maskData[i+3];
-            if (maskAlpha === 0) continue; // Skip pixels not brushed
-            
-            const brushWeight = maskAlpha / 255.0; // Soft brush support
-            
-            let r = data[i], g = data[i+1], b = data[i+2];
-            
-            let targetWeight = strength * brushWeight;
-            const boost = type === 'eyes' ? 0.7 : 0.8; 
-            
-            // Screen blend
-            let dr = r + ((255 - r) * targetWeight * boost);
-            let dg = g + ((255 - g) * targetWeight * boost);
-            let db = b + ((255 - b) * targetWeight * boost);
-            
-            // Desaturate slightly to remove yellow/red tint
-            const newL = 0.299 * dr + 0.587 * dg + 0.114 * db;
-            dr = dr * (1 - targetWeight) + newL * targetWeight;
-            dg = dg * (1 - targetWeight) + newL * targetWeight;
-            db = db * (1 - targetWeight) + newL * targetWeight;
-            
-            data[i] = Math.min(255, dr);
-            data[i+1] = Math.min(255, dg);
-            data[i+2] = Math.min(255, db);
+        const k = intensity / 100;
+        const brush = maskCtx.getImageData(0, 0, w, h).data;   // lo pintado a mano
+        const cache = whitenCache && whitenCache.w === w && whitenCache.h === h && whitenCache.type === type ? whitenCache : null;
+        const auto = cache && cache.mask;
+        const iris = cache && cache.iris;
+
+        for (let i = 0, j = 0; i < w * h; i++, j += 4) {
+            let m = auto ? auto[i] : 0;
+            const bm = brush[j + 3] / 153;   // el pincel pinta con 60% de opacidad
+            if (bm > m) m = Math.min(1, bm);
+            let r = data[j], g = data[j + 1], b = data[j + 2];
+
+            if (m > 0.01) {
+                const a = m * k;
+                const L = 0.299 * r + 0.587 * g + 0.114 * b;
+                // Quitar el tono amarillo/rojizo y aclarar
+                r = r + (L - r) * a * 0.85;
+                g = g + (L - g) * a * 0.85;
+                b = b + (L - b) * a * 0.85 + a * 6;
+                const lift = type === 'teeth' ? 0.38 : 0.3;
+                r += (255 - r) * a * lift; g += (255 - g) * a * lift; b += (255 - b) * a * lift;
+            }
+            if (iris && iris[i] > 0.01) {
+                // Iris: más color, más contraste y un poco de brillo
+                const a = iris[i] * k;
+                const L = 0.299 * r + 0.587 * g + 0.114 * b;
+                r = L + (r - L) * (1 + a * 0.5); g = L + (g - L) * (1 + a * 0.5); b = L + (b - L) * (1 + a * 0.5);
+                r = r * (1 + a * 0.18) + a * 6; g = g * (1 + a * 0.18) + a * 6; b = b * (1 + a * 0.18) + a * 6;
+            }
+            data[j] = r; data[j + 1] = g; data[j + 2] = b;
         }
-        
         ctxTarget.putImageData(imgData, 0, 0);
     }
 
-    // "Carnet Mágico": usa la IA (difumina el fondo y retoca la cara).
-    // Si la IA no se puede cargar, aplica un retoque suave de piel como plan B.
+    async function prepareWhitenTool(type) {
+        whitenCache = null;
+        DOM.adjMagicIntensity.disabled = true;
+        DOM.loadingOverlay.classList.remove('hidden');
+        DOM.loadingText.textContent = type === 'teeth' ? "Buscando la boca..." : "Buscando los ojos...";
+        await new Promise(r => setTimeout(r, 30));
+        let faces = null;
+        try {
+            if (typeof window.detectFaceParts === 'function') faces = await window.detectFaceParts(DOM.mainCanvas);
+        } catch (err) {
+            console.warn('No se pudo detectar la cara', err);
+        }
+        const wanted = type === 'teeth' ? 'magic-teeth' : 'magic-eyes';
+        DOM.loadingOverlay.classList.add('hidden');
+        DOM.loadingText.textContent = "Cargando...";
+        DOM.adjMagicIntensity.disabled = false;
+        if (currentTool !== wanted) return;
+
+        whitenCache = buildWhitenCache(type, faces);
+        let found = 0;
+        if (whitenCache.mask) for (let i = 0; i < whitenCache.mask.length; i += 3) if (whitenCache.mask[i] > 0.3) { found++; if (found > 20) break; }
+        const hasIris = whitenCache.iris && whitenCache.iris.some(v => v > 0.5);
+
+        if (type === 'teeth') {
+            if (found > 20) showToast("Dientes encontrados ✓ (si falta alguno, píntalo)");
+            else if (whitenCache.faces) showToast("No se ven dientes: si los hay, píntalos con el dedo");
+            else showToast("No he encontrado la cara: pinta los dientes con el dedo");
+        } else {
+            if (found > 20 || hasIris) showToast("Ojos encontrados ✓ (si falta algo, píntalo)");
+            else showToast("No he encontrado los ojos: píntalos con el dedo");
+        }
+        // Enseñar la zona encontrada (blanco + iris)
+        if (whitenCache.mask) {
+            const show = new Float32Array(whitenCache.mask);
+            if (whitenCache.iris) for (let i = 0; i < show.length; i++) show[i] = Math.max(show[i], whitenCache.iris[i] * 0.8);
+            flashMask(show, whitenCache.w, whitenCache.h, type === 'teeth' ? [80, 170, 255] : [120, 220, 120]);
+        }
+        DOM.adjMagicIntensity.value = 60;
+        DOM.valMagicIntensity.textContent = 60;
+        applyAdjustments();
+    }
+
+    // "Carnet Mágico": un solo toque que junta todo
+    //  1. Más luz y color (sin pasarse)
+    //  2. Piel lisa en todas las caras
+    //  3. Dientes más blancos
+    //  4. Ojos más claros y con más color
+    function applyLightAndColor(ctxTarget) {
+        const w = ctxTarget.canvas.width, h = ctxTarget.canvas.height;
+        const img = ctxTarget.getImageData(0, 0, w, h);
+        const d = img.data;
+        // Tabla de luz: aclara medios tonos y sombras, respeta las luces
+        const curve = new Uint8ClampedArray(256);
+        for (let v = 0; v < 256; v++) {
+            let x = v / 255;
+            x = Math.pow(x, 0.86);                       // más luz
+            x = x + 0.06 * Math.sin((x - 0.5) * Math.PI) * (1 - Math.abs(x - 0.5) * 2) ; // un poco de contraste
+            curve[v] = Math.round(Math.min(1, Math.max(0, x)) * 255);
+        }
+        for (let j = 0; j < d.length; j += 4) {
+            let r = curve[d[j]], g = curve[d[j + 1]], b = curve[d[j + 2]];
+            // Viveza: sube el color de lo que está apagado, sin saturar lo que ya es vivo
+            const max = Math.max(r, g, b), min = Math.min(r, g, b);
+            const sat = (max - min) / 255;
+            const L = 0.299 * r + 0.587 * g + 0.114 * b;
+            const boost = 0.32 * (1 - sat);
+            r = L + (r - L) * (1 + boost);
+            g = L + (g - L) * (1 + boost);
+            b = L + (b - L) * (1 + boost);
+            d[j] = r; d[j + 1] = g; d[j + 2] = b;
+        }
+        ctxTarget.putImageData(img, 0, 0);
+    }
+
     async function runMagic() {
         if (!hasImage) return;
         if (currentTool) toggleTool(currentTool);
+        maskCtx.clearRect(0, 0, DOM.maskCanvas.width, DOM.maskCanvas.height);
 
-        let done = false;
-        if (typeof window.runMagicCarnet === 'function') {
-            try {
-                done = await window.runMagicCarnet();
-            } catch (err) {
-                console.error('Error en Carnet Mágico', err);
-                done = false;
-            }
+        DOM.loadingOverlay.classList.remove('hidden');
+        DOM.loadingText.textContent = "Buscando caras...";
+        await new Promise(r => setTimeout(r, 30));
+
+        // Buscar caras sobre la foto tal como está
+        let skin = null, parts = null;
+        try {
+            if (typeof window.detectSkinMask === 'function') skin = await window.detectSkinMask(DOM.mainCanvas);
+            if (typeof window.detectFaceParts === 'function') parts = await window.detectFaceParts(DOM.mainCanvas);
+        } catch (err) {
+            console.warn('La IA no ha podido analizar la foto', err);
         }
+        const faces = (skin && skin.faces) || (parts && parts.length) || 0;
 
-        if (!done) {
-            DOM.loadingOverlay.classList.remove('hidden');
-            DOM.loadingText.textContent = "Aplicando retoque...";
-            await new Promise(r => setTimeout(r, 50));
-            applySmartSkinSmoothing(ctx, 75);
-            commitCanvas("Carnet Mágico (sin IA)");
+        try {
+            DOM.loadingText.textContent = "Dando luz y color...";
+            await new Promise(r => setTimeout(r, 30));
+            applyLightAndColor(ctx);
+
+            if (faces > 0 && skin && skin.mask) {
+                DOM.loadingText.textContent = "Alisando la piel...";
+                await new Promise(r => setTimeout(r, 30));
+                skinCache = buildSkinCache(ctx, skin);
+                applySmartSkinSmoothing(ctx, 60);
+                skinCache = null;
+            }
+            if (parts && parts.length) {
+                DOM.loadingText.textContent = "Dientes y ojos...";
+                await new Promise(r => setTimeout(r, 30));
+                whitenCache = buildWhitenCache('teeth', parts);
+                applySmartWhiten(ctx, 55, 'teeth');
+                whitenCache = buildWhitenCache('eyes', parts);
+                applySmartWhiten(ctx, 50, 'eyes');
+                whitenCache = null;
+            }
+            commitCanvas("Carnet Mágico");
+
+            if (faces === 1) showToast("¡Magia aplicada! Luz, color, piel, dientes y ojos ✓");
+            else if (faces > 1) showToast(`¡Magia aplicada a ${faces} personas! ✓`);
+            else showToast("No he encontrado caras: se ha mejorado la luz y el color");
+        } catch (err) {
+            console.error('Error en Carnet Mágico', err);
+            showToast("No se ha podido aplicar la magia");
+        } finally {
+            skinCache = null; whitenCache = null;
             DOM.loadingOverlay.classList.add('hidden');
             DOM.loadingText.textContent = "Cargando...";
-            showToast("La IA no está disponible: se ha aplicado solo el retoque de piel");
-        } else {
-            showToast("¡Magia aplicada!");
         }
     }
 
@@ -937,6 +1283,11 @@ function toggleTool(tool) {
         if (DOM.textOverlay) DOM.textOverlay.classList.add('hidden');
         // Volver a mostrar los deslizadores de Ajustes (se ocultan al usar una herramienta)
         DOM.adjustmentsSettings.classList.remove('hidden');
+        skinCache = null;
+        whitenCache = null;
+        maskCtx.clearRect(0, 0, DOM.maskCanvas.width, DOM.maskCanvas.height);
+        DOM.maskCanvas.style.opacity = '';
+        DOM.adjMagicIntensity.disabled = false;
         DOM.toolCursor.classList.add('hidden');
         DOM.cropOverlay.classList.add('hidden');
         DOM.mainCanvas.style.cursor = 'default';
@@ -978,6 +1329,7 @@ function toggleTool(tool) {
                 DOM.magicActiveTitle.textContent = "Piel Perfecta";
                 DOM.magicActiveIcon.className = "fas fa-smile";
                 if (DOM.magicBrushSettings) DOM.magicBrushSettings.classList.add('hidden');
+                skinCache = null;
             } else if (tool === 'magic-teeth') {
                 DOM.magicActiveTitle.textContent = "Blanquear Dientes";
                 DOM.magicActiveIcon.className = "fas fa-tooth";
@@ -992,6 +1344,9 @@ function toggleTool(tool) {
                 DOM.maskCanvas.style.opacity = '0';
             }
             applyAdjustments();
+            if (tool === 'magic-skin') prepareSkinTool();
+            else if (tool === 'magic-teeth') prepareWhitenTool('teeth');
+            else if (tool === 'magic-eyes') prepareWhitenTool('eyes');
         }
         
         switch(tool) {
@@ -1003,8 +1358,7 @@ function toggleTool(tool) {
             if (DOM.textSettings) DOM.textSettings.classList.remove('hidden');
             if (DOM.textOverlay) {
                 // Mostrar la vista previa con el estilo actual, centrada en la foto
-                updateTextPreview();
-                requestAnimationFrame(() => {
+                updateTextPreview().then(() => {
                     const b = getImageVisualBounds();
                     const cont = DOM.canvasContainer.getBoundingClientRect();
                     DOM.textOverlay.style.left = (b.left - cont.left + b.width / 2 - DOM.textOverlay.offsetWidth / 2) + 'px';
@@ -1015,6 +1369,10 @@ function toggleTool(tool) {
     }
         
         if (tool === 'clone' || tool === 'blur') {
+            // El pincel se tiene que ver (Dientes/Ojos lo dejan invisible) y empezar limpio
+            maskCtx.clearRect(0, 0, DOM.maskCanvas.width, DOM.maskCanvas.height);
+            DOM.maskCanvas.style.transition = '';
+            DOM.maskCanvas.style.opacity = '1';
             // El borrado rellena la zona automáticamente; ya no hace falta fijar un origen
             if (DOM.btnSetCloneSource) DOM.btnSetCloneSource.classList.add('hidden');
             DOM.btnApplyEraser.classList.toggle('hidden', tool !== 'clone');
@@ -1389,9 +1747,73 @@ DOM.exportQuality.addEventListener('input', () => {
 });
 
 // --- Theme Selector ---
-DOM.themeSelector.addEventListener('change', (e) => {
-    document.documentElement.setAttribute('data-theme', e.target.value);
-});
+// --- Temas de la app (Configuración) ---
+// bg: fondo · accent: color principal · hover: color suave · text: texto · muted: texto secundario
+// on: color del texto encima del color principal · logoA / logoB: colores del logo "Dif" + "uminar"
+const THEMES = [
+    { id: 'rosa',        name: 'Rosa',             bg: '#fff5f7', accent: '#f472b6', hover: '#fbcfe8', text: '#4c0519', muted: '#9f1239', on: '#ffffff', logoA: '#ec4899', logoB: '#4c0519' },
+    { id: 'marron',      name: 'Marrón',           bg: '#fdfaf7', accent: '#a47148', hover: '#ead7c5', text: '#3b2a21', muted: '#7c5a43', on: '#ffffff', logoA: '#a47148', logoB: '#3b2a21' },
+    { id: 'lima',        name: 'Verde lima',       bg: '#fbffef', accent: '#84cc16', hover: '#d9f99d', text: '#1a2e05', muted: '#3f6212', on: '#1a2e05', logoA: '#65a30d', logoB: '#1a2e05' },
+    { id: 'verde',       name: 'Verde',            bg: '#f3fbf6', accent: '#16a34a', hover: '#bbf7d0', text: '#052e16', muted: '#166534', on: '#ffffff', logoA: '#16a34a', logoB: '#052e16' },
+    { id: 'amarillo',    name: 'Amarillo',         bg: '#fffdf0', accent: '#facc15', hover: '#fef08a', text: '#422006', muted: '#854d0e', on: '#422006', logoA: '#eab308', logoB: '#422006' },
+    { id: 'naranja',     name: 'Naranja',          bg: '#fff8f1', accent: '#f97316', hover: '#fed7aa', text: '#431407', muted: '#9a3412', on: '#ffffff', logoA: '#f97316', logoB: '#431407' },
+    { id: 'azul',        name: 'Azul',             bg: '#f5f8ff', accent: '#2563eb', hover: '#bfdbfe', text: '#172554', muted: '#1e40af', on: '#ffffff', logoA: '#2563eb', logoB: '#172554' },
+    { id: 'azulpastel',  name: 'Azul pastel',      bg: '#f7fbff', accent: '#93c5fd', hover: '#dbeafe', text: '#1e3a5f', muted: '#3b6a9a', on: '#1e3a5f', logoA: '#60a5fa', logoB: '#1e3a5f' },
+    { id: 'gris',        name: 'Gris',             bg: '#fafafa', accent: '#71717a', hover: '#e4e4e7', text: '#18181b', muted: '#52525b', on: '#ffffff', logoA: '#71717a', logoB: '#18181b' },
+    { id: 'grisrojo',    name: 'Gris y rojo',      bg: '#fafafa', accent: '#dc2626', hover: '#e5e7eb', text: '#27272a', muted: '#6b7280', on: '#ffffff', logoA: '#dc2626', logoB: '#3f3f46' },
+    { id: 'negro',       name: 'Negro',            bg: '#ffffff', accent: '#111111', hover: '#e5e5e5', text: '#111111', muted: '#525252', on: '#ffffff', logoA: '#111111', logoB: '#737373' },
+    { id: 'lila',        name: 'Lila',             bg: '#faf7ff', accent: '#a78bfa', hover: '#ede9fe', text: '#2e1065', muted: '#6d28d9', on: '#ffffff', logoA: '#8b5cf6', logoB: '#2e1065' },
+    { id: 'morado',      name: 'Morado',           bg: '#fbf7fd', accent: '#7e22ce', hover: '#e9d5ff', text: '#2e1065', muted: '#6b21a8', on: '#ffffff', logoA: '#9333ea', logoB: '#2e1065' },
+    { id: 'turquesa',    name: 'Turquesa',         bg: '#f2fdfd', accent: '#14b8a6', hover: '#ccfbf1', text: '#042f2e', muted: '#115e59', on: '#ffffff', logoA: '#0d9488', logoB: '#042f2e' },
+    { id: 'menta',       name: 'Menta',            bg: '#f5fffa', accent: '#6ee7b7', hover: '#d1fae5', text: '#064e3b', muted: '#047857', on: '#064e3b', logoA: '#34d399', logoB: '#064e3b' },
+    { id: 'coral',       name: 'Coral',            bg: '#fff7f5', accent: '#fb7185', hover: '#ffe4e6', text: '#4c0519', muted: '#be123c', on: '#ffffff', logoA: '#f43f5e', logoB: '#4c0519' },
+    { id: 'burdeos',     name: 'Burdeos',          bg: '#fdf7f8', accent: '#9f1239', hover: '#fecdd3', text: '#3b0712', muted: '#881337', on: '#ffffff', logoA: '#9f1239', logoB: '#3b0712' },
+    { id: 'marino',      name: 'Azul marino',      bg: '#f6f8fc', accent: '#1e3a8a', hover: '#c7d2fe', text: '#0f172a', muted: '#334155', on: '#ffffff', logoA: '#1e3a8a', logoB: '#64748b' },
+    { id: 'oliva',       name: 'Verde oliva',      bg: '#fafbf3', accent: '#6b7f2a', hover: '#e3e8c4', text: '#232b0c', muted: '#4d5c1c', on: '#ffffff', logoA: '#6b7f2a', logoB: '#232b0c' },
+    { id: 'arena',       name: 'Arena',            bg: '#fffcf6', accent: '#d6b98c', hover: '#f3e8d5', text: '#3d2f1b', muted: '#8a6d45', on: '#3d2f1b', logoA: '#c9a36a', logoB: '#3d2f1b' },
+    { id: 'cielo',       name: 'Cielo',            bg: '#f5fcff', accent: '#0ea5e9', hover: '#bae6fd', text: '#082f49', muted: '#0369a1', on: '#ffffff', logoA: '#0ea5e9', logoB: '#082f49' },
+    { id: 'chicle',      name: 'Chicle',           bg: '#fff7fd', accent: '#e879f9', hover: '#fae8ff', text: '#4a044e', muted: '#a21caf', on: '#ffffff', logoA: '#d946ef', logoB: '#4a044e' }
+];
+
+function applyTheme(id) {
+    const t = THEMES.find(x => x.id === id) || THEMES[0];
+    const r = document.documentElement.style;
+    r.setProperty('--bg-color', t.bg);
+    r.setProperty('--accent-color', t.accent);
+    r.setProperty('--accent-hover', t.hover);
+    r.setProperty('--text-main', t.text);
+    r.setProperty('--text-muted', t.muted);
+    r.setProperty('--on-accent', t.on);
+    r.setProperty('--logo-a', t.logoA);
+    r.setProperty('--logo-b', t.logoB);
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', t.bg);
+    try { localStorage.setItem('difuminar-theme', t.id); } catch (e) {}
+    document.querySelectorAll('.theme-swatch').forEach(b => b.classList.toggle('active', b.dataset.theme === t.id));
+}
+
+(function setupSettings() {
+    let saved = 'rosa';
+    try { saved = localStorage.getItem('difuminar-theme') || 'rosa'; } catch (e) {}
+    const grid = document.getElementById('theme-grid');
+    if (grid) {
+        THEMES.forEach(t => {
+            const b = document.createElement('button');
+            b.className = 'theme-swatch';
+            b.dataset.theme = t.id;
+            b.innerHTML = `<span class="swatch-dot" style="background: linear-gradient(135deg, ${t.accent} 0 50%, ${t.bg} 50% 100%); border-color: ${t.hover}"></span><span class="swatch-name">${t.name}</span>`;
+            b.addEventListener('click', () => { playClickSound(); applyTheme(t.id); });
+            grid.appendChild(b);
+        });
+    }
+    applyTheme(saved);
+    const modal = document.getElementById('settings-modal');
+    const open = document.getElementById('btn-settings');
+    const close = document.getElementById('btn-close-settings');
+    if (open && modal) open.addEventListener('click', () => modal.classList.add('active'));
+    if (close && modal) close.addEventListener('click', () => modal.classList.remove('active'));
+    if (modal) modal.addEventListener('click', e => { if (e.target === modal) modal.classList.remove('active'); });
+})();
 
 // --- Export & Compare ---
 
@@ -1627,19 +2049,7 @@ DOM.btnApplyBlur.addEventListener('click', () => {
 });
 
 function applyManualBlur(w, h) {
-    const blurAmt = 15; // fixed amount or could use a slider
-    const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = w; tempCanvas.height = h;
-    const tCtx = tempCanvas.getContext('2d');
-    
-    // Blur the original canvas
-    tCtx.filter = `blur(${blurAmt}px)`;
-    tCtx.drawImage(ctx.canvas, 0, 0);
-    
-    const blurredData = tCtx.getImageData(0, 0, w, h);
-    const mainImgData = ctx.getImageData(0, 0, w, h);
     const maskImgData = maskCtx.getImageData(0, 0, w, h);
-
     let painted = false;
     for (let i = 3; i < maskImgData.data.length; i += 4) {
         if (maskImgData.data[i] > 0) { painted = true; break; }
@@ -1648,25 +2058,39 @@ function applyManualBlur(w, h) {
         showToast("Primero pinta la zona que quieres difuminar");
         return;
     }
-    
-    for(let i=0; i<w*h; i++) {
-        // maskData is drawn in rgba(0, 100, 255, 0.6) so alpha > 0 means drawn
-        const alpha = maskImgData.data[i*4 + 3];
-        if (alpha > 0) {
-            const blend = alpha / 255.0;
-            const px = i * 4;
-            mainImgData.data[px] = mainImgData.data[px]*(1-blend) + blurredData.data[px]*blend;
-            mainImgData.data[px+1] = mainImgData.data[px+1]*(1-blend) + blurredData.data[px+1]*blend;
-            mainImgData.data[px+2] = mainImgData.data[px+2]*(1-blend) + blurredData.data[px+2]*blend;
-        }
+
+    // Difuminado proporcional al tamaño de la foto (antes era fijo y casi no se notaba)
+    const blurAmt = Math.max(10, Math.round(Math.max(w, h) / 70));
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = w; tempCanvas.height = h;
+    const tCtx = tempCanvas.getContext('2d');
+    tCtx.filter = `blur(${blurAmt}px)`;
+    tCtx.drawImage(ctx.canvas, 0, 0);
+    const blurredData = tCtx.getImageData(0, 0, w, h);
+    const mainImgData = ctx.getImageData(0, 0, w, h);
+
+    // Bordes suaves para que no se note dónde empieza el difuminado
+    const softCanvas = document.createElement('canvas');
+    softCanvas.width = w; softCanvas.height = h;
+    const sCtx = softCanvas.getContext('2d');
+    sCtx.filter = `blur(${Math.max(2, Math.round(blurAmt / 3))}px)`;
+    sCtx.drawImage(DOM.maskCanvas, 0, 0);
+    const soft = sCtx.getImageData(0, 0, w, h).data;
+
+    for (let i = 0; i < w * h; i++) {
+        const px = i * 4;
+        // El pincel pinta al 60% de opacidad: lo pintado cuenta como 100%
+        const blend = Math.min(1, soft[px + 3] / 140);
+        if (blend <= 0) continue;
+        mainImgData.data[px] = mainImgData.data[px] * (1 - blend) + blurredData.data[px] * blend;
+        mainImgData.data[px + 1] = mainImgData.data[px + 1] * (1 - blend) + blurredData.data[px + 1] * blend;
+        mainImgData.data[px + 2] = mainImgData.data[px + 2] * (1 - blend) + blurredData.data[px + 2] * blend;
     }
-    
+
     ctx.putImageData(mainImgData, 0, 0);
     maskCtx.clearRect(0, 0, w, h);
     commitCanvas("Difuminado Manual");
 }
-
-
 
 DOM.btnApplyEraser.addEventListener('click', () => {
     const w = DOM.mainCanvas.width;
@@ -1682,94 +2106,143 @@ DOM.btnApplyEraser.addEventListener('click', () => {
     }, 50);
 });
 
+// Rellena la zona pintada con lo que hay alrededor.
+// Se trabaja por niveles (de pequeño a grande) para que el relleno sea suave y completo,
+// y al final se añade un poco de "grano" para que no quede una mancha lisa.
 function applyInpainting(w, h) {
-    const maskImgData = maskCtx.getImageData(0, 0, w, h);
+    const maskData = maskCtx.getImageData(0, 0, w, h).data;
     const mainImgData = ctx.getImageData(0, 0, w, h);
-    const maskData = maskImgData.data;
     const data = mainImgData.data;
-    
-    let toFill = [];
-    let m = new Uint8Array(w * h);
-    for(let i=0; i<w*h; i++) {
-        if(maskData[i*4 + 3] > 50) { 
-            m[i] = 1;
-            toFill.push(i);
+
+    const hole = new Uint8Array(w * h);
+    let count = 0;
+    let minX = w, minY = h, maxX = -1, maxY = -1;
+    for (let i = 0; i < w * h; i++) {
+        if (maskData[i * 4 + 3] > 40) {
+            hole[i] = 1; count++;
+            const x = i % w, y = (i / w) | 0;
+            if (x < minX) minX = x; if (x > maxX) maxX = x;
+            if (y < minY) minY = y; if (y > maxY) maxY = y;
         }
     }
-    
-    if(toFill.length === 0) {
+    if (count === 0) {
         showToast("Primero pinta sobre lo que quieres borrar");
         return;
     }
-    
-    const neighbors = [-1, 1, -w, w, -w-1, -w+1, w-1, w+1];
-    const tempData = new Uint8ClampedArray(data);
-    
-    // Onion-peeling inpaint
-    for(let pass=0; pass < 80; pass++) {
-        let changed = false;
-        let borderPixels = [];
-        for(let i=0; i<toFill.length; i++) {
-            let idx = toFill[i];
-            if(m[idx] === 0) continue;
-            
-            let r=0, g=0, b=0, count=0;
-            for(let d of neighbors) {
-                let nIdx = idx + d;
-                if(nIdx >= 0 && nIdx < w*h && m[nIdx] === 0) {
-                    if(Math.abs((nIdx%w) - (idx%w)) <= 1) {
-                        r += data[nIdx*4];
-                        g += data[nIdx*4+1];
-                        b += data[nIdx*4+2];
-                        count++;
-                    }
-                }
-            }
-            if (count > 0) {
-                tempData[idx*4] = r/count;
-                tempData[idx*4+1] = g/count;
-                tempData[idx*4+2] = b/count;
-                borderPixels.push(idx);
-                changed = true;
-            }
-        }
-        
-        for(let idx of borderPixels) {
-            data[idx*4] = tempData[idx*4];
-            data[idx*4+1] = tempData[idx*4+1];
-            data[idx*4+2] = tempData[idx*4+2];
-            m[idx] = 0;
-        }
-        
-        if(!changed) break;
+
+    // Trabajar solo en un recuadro alrededor de lo pintado (más rápido)
+    const pad = Math.max(24, Math.round(Math.max(maxX - minX, maxY - minY) * 0.5));
+    const x0 = Math.max(0, minX - pad), y0 = Math.max(0, minY - pad);
+    const x1 = Math.min(w - 1, maxX + pad), y1 = Math.min(h - 1, maxY + pad);
+    const W = x1 - x0 + 1, H = y1 - y0 + 1;
+
+    // Nivel 0 (tamaño real)
+    const level0 = { w: W, h: H, r: new Float32Array(W * H), g: new Float32Array(W * H), b: new Float32Array(W * H), m: new Uint8Array(W * H) };
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const gi = (y + y0) * w + (x + x0), li = y * W + x, j = gi * 4;
+        level0.r[li] = data[j]; level0.g[li] = data[j + 1]; level0.b[li] = data[j + 2];
+        level0.m[li] = hole[gi];
     }
-    
-    // Smoothing pass
-    for(let pass=0; pass<3; pass++) {
-        for(let i=0; i<toFill.length; i++) {
-            let idx = toFill[i];
-            let r=0, g=0, b=0, count=0;
-            for(let d of neighbors) {
-                let nIdx = idx + d;
-                if(nIdx >= 0 && nIdx < w*h && Math.abs((nIdx%w) - (idx%w)) <= 1) {
-                    r += data[nIdx*4];
-                    g += data[nIdx*4+1];
-                    b += data[nIdx*4+2];
-                    count++;
+
+    // Pirámide: cada nivel a la mitad, usando solo los píxeles conocidos
+    const levels = [level0];
+    while (levels.length < 10) {
+        const L = levels[levels.length - 1];
+        if (L.w <= 8 || L.h <= 8) break;
+        let anyHole = false;
+        for (let i = 0; i < L.m.length; i++) if (L.m[i]) { anyHole = true; break; }
+        if (!anyHole) break;
+        const nw = Math.ceil(L.w / 2), nh = Math.ceil(L.h / 2);
+        const N = { w: nw, h: nh, r: new Float32Array(nw * nh), g: new Float32Array(nw * nh), b: new Float32Array(nw * nh), m: new Uint8Array(nw * nh) };
+        for (let y = 0; y < nh; y++) for (let x = 0; x < nw; x++) {
+            let r = 0, g = 0, b = 0, n = 0;
+            for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) {
+                const sx = x * 2 + dx, sy = y * 2 + dy;
+                if (sx >= L.w || sy >= L.h) continue;
+                const si = sy * L.w + sx;
+                if (L.m[si]) continue;
+                r += L.r[si]; g += L.g[si]; b += L.b[si]; n++;
+            }
+            const i = y * nw + x;
+            if (n) { N.r[i] = r / n; N.g[i] = g / n; N.b[i] = b / n; } else N.m[i] = 1;
+        }
+        levels.push(N);
+    }
+
+    // Nivel más pequeño: rellenar desde los bordes hacia dentro
+    const top = levels[levels.length - 1];
+    {
+        const known = top.m.map(v => v ? 0 : 1);
+        let pending = [];
+        for (let i = 0; i < top.m.length; i++) if (top.m[i]) pending.push(i);
+        let guard = 0;
+        while (pending.length && guard++ < 5000) {
+            const done = [], rest = [];
+            for (const i of pending) {
+                const x = i % top.w, y = (i / top.w) | 0;
+                let r = 0, g = 0, b = 0, n = 0;
+                for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+                    const nx = x + dx, ny = y + dy;
+                    if (nx < 0 || ny < 0 || nx >= top.w || ny >= top.h) continue;
+                    const k = ny * top.w + nx;
+                    if (!known[k]) continue;
+                    r += top.r[k]; g += top.g[k]; b += top.b[k]; n++;
                 }
+                if (n) { top.r[i] = r / n; top.g[i] = g / n; top.b[i] = b / n; done.push(i); } else rest.push(i);
             }
-            if (count > 0) {
-                tempData[idx*4] = r/count;
-                tempData[idx*4+1] = g/count;
-                tempData[idx*4+2] = b/count;
+            if (!done.length) break;
+            done.forEach(i => known[i] = 1);
+            pending = rest;
+        }
+    }
+
+    // Subir de nivel: partir del nivel inferior y suavizar solo dentro del hueco
+    for (let li = levels.length - 2; li >= 0; li--) {
+        const L = levels[li], C = levels[li + 1];
+        const idx = [];
+        for (let i = 0; i < L.m.length; i++) {
+            if (!L.m[i]) continue;
+            const x = i % L.w, y = (i / L.w) | 0;
+            const ci = Math.min(C.h - 1, y >> 1) * C.w + Math.min(C.w - 1, x >> 1);
+            L.r[i] = C.r[ci]; L.g[i] = C.g[ci]; L.b[i] = C.b[ci];
+            idx.push(i);
+        }
+        for (let it = 0; it < 12; it++) {
+            for (const i of idx) {
+                const x = i % L.w, y = (i / L.w) | 0;
+                let r = 0, g = 0, b = 0, n = 0;
+                if (x > 0) { r += L.r[i - 1]; g += L.g[i - 1]; b += L.b[i - 1]; n++; }
+                if (x < L.w - 1) { r += L.r[i + 1]; g += L.g[i + 1]; b += L.b[i + 1]; n++; }
+                if (y > 0) { r += L.r[i - L.w]; g += L.g[i - L.w]; b += L.b[i - L.w]; n++; }
+                if (y < L.h - 1) { r += L.r[i + L.w]; g += L.g[i + L.w]; b += L.b[i + L.w]; n++; }
+                L.r[i] = r / n; L.g[i] = g / n; L.b[i] = b / n;
             }
         }
-        for(let i=0; i<toFill.length; i++) {
-            let idx = toFill[i];
-            data[idx*4] = tempData[idx*4];
-            data[idx*4+1] = tempData[idx*4+1];
-            data[idx*4+2] = tempData[idx*4+2];
-        }
+    }
+
+    // Grano: medir la textura del borde y añadir una parecida dentro
+    let grain = 0, gn = 0;
+    for (let y = 1; y < H - 1; y += 2) for (let x = 1; x < W - 1; x += 2) {
+        const i = y * W + x;
+        if (level0.m[i]) continue;
+        const nearHole = level0.m[i - 3] || level0.m[i + 3] || (i - 3 * W >= 0 && level0.m[i - 3 * W]) || (i + 3 * W < level0.m.length && level0.m[i + 3 * W]);
+        if (!nearHole) continue;
+        const l = level0.r[i] * 0.299 + level0.g[i] * 0.587 + level0.b[i] * 0.114;
+        const la = ((level0.r[i - 1] + level0.r[i + 1] + level0.r[i - W] + level0.r[i + W]) * 0.299 +
+                    (level0.g[i - 1] + level0.g[i + 1] + level0.g[i - W] + level0.g[i + W]) * 0.587 +
+                    (level0.b[i - 1] + level0.b[i + 1] + level0.b[i - W] + level0.b[i + W]) * 0.114) / 4;
+        grain += Math.abs(l - la); gn++;
+    }
+    grain = gn ? Math.min(14, grain / gn) * 1.6 : 0;
+
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const li = y * W + x;
+        if (!level0.m[li]) continue;
+        const j = ((y + y0) * w + (x + x0)) * 4;
+        const n = (Math.random() - 0.5) * 2 * grain;
+        data[j] = level0.r[li] + n;
+        data[j + 1] = level0.g[li] + n;
+        data[j + 2] = level0.b[li] + n;
     }
 
     ctx.putImageData(mainImgData, 0, 0);
@@ -1866,241 +2339,33 @@ function escapeHtml(str) {
     return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-function updateTextPreview() {
-    if (!DOM.textOverlay) return;
-    const rawText = DOM.textInput.value || "Texto de ejemplo";
-    const text = escapeHtml(rawText);
-    const size = DOM.textSize.value;
-    const font = DOM.textFont.value;
-    const color = DOM.textColor.value;
-    const opacity = DOM.textOpacity.value / 100;
-    
+// Vista previa del texto: se dibuja con el mismo motor que se usa al fijarlo (textstyles.js)
+let textPreviewToken = 0;
+async function updateTextPreview() {
+    if (!DOM.textOverlay || !window.TextStyles) return;
+    const token = ++textPreviewToken;
+    const text = DOM.textInput.value || "Tu texto";
+    const size = parseInt(DOM.textSize.value);
+    await window.TextStyles.ensureFonts(DOM.textFont.value);
+    if (token !== textPreviewToken) return;
+    const dpr = Math.min(3, window.devicePixelRatio || 1);
+    const rendered = window.TextStyles.render(currentTextStyle, text, { size: size * dpr, font: DOM.textFont.value, color: DOM.textColor.value });
     const contentDiv = document.getElementById('text-overlay-content');
     if (!contentDiv) return;
-    
-    // Base styles
-    contentDiv.style.fontSize = `${size}px`;
-    contentDiv.style.fontFamily = font;
-    contentDiv.style.color = color;
-    contentDiv.style.opacity = opacity;
-    contentDiv.style.position = 'relative';
-    // Limpiar restos del estilo anterior (sombras, contornos, giros...)
-    contentDiv.style.textShadow = 'none';
-    contentDiv.style.webkitTextStroke = '0';
-    contentDiv.style.filter = 'none';
-    contentDiv.style.transform = 'none';
-    contentDiv.style.fontStyle = 'normal';
-    contentDiv.style.fontWeight = 'normal';
-    
-    // Decorative rendering
-    if (currentTextStyle === 'basico') {
-        contentDiv.innerHTML = text.replace(/\n/g, '<br>');
-        contentDiv.style.border = 'none';
-        contentDiv.style.borderRadius = '0';
-        contentDiv.style.padding = '0';
-    } 
-    else if (currentTextStyle === 'bloque') {
-        const lines = text.split('\n');
-        let html = '';
-        lines.forEach(line => {
-            html += `<div style="line-height:0.85; text-transform:uppercase;">${line}</div>`;
-        });
-        contentDiv.innerHTML = html;
-        contentDiv.style.border = 'none';
-        contentDiv.style.borderRadius = '0';
-        contentDiv.style.padding = '0';
+
+    // Mantener el centro del texto en el mismo sitio al cambiar de tamaño o estilo
+    const oldW = DOM.textOverlay.offsetWidth, oldH = DOM.textOverlay.offsetHeight;
+    rendered.style.width = (rendered.width / dpr) + 'px';
+    rendered.style.height = (rendered.height / dpr) + 'px';
+    rendered.style.display = 'block';
+    rendered.style.pointerEvents = 'none';
+    contentDiv.style.cssText = 'line-height:0;';
+    contentDiv.style.opacity = DOM.textOpacity.value / 100;
+    contentDiv.replaceChildren(rendered);
+    if (oldW && DOM.textOverlay.style.left) {
+        DOM.textOverlay.style.left = (parseFloat(DOM.textOverlay.style.left) + (oldW - DOM.textOverlay.offsetWidth) / 2) + 'px';
+        DOM.textOverlay.style.top = (parseFloat(DOM.textOverlay.style.top) + (oldH - DOM.textOverlay.offsetHeight) / 2) + 'px';
     }
-    else if (currentTextStyle === 'cursiva') {
-        contentDiv.innerHTML = text.replace(/\n/g, '<br>');
-        contentDiv.style.border = 'none';
-        contentDiv.style.borderRadius = '0';
-        contentDiv.style.padding = '0';
-        contentDiv.style.fontFamily = "'Brush Script MT', cursive";
-    }
-    else if (currentTextStyle === 'accion') {
-        const lines = text.split('\n');
-        let html = `<div style="border-top:${Math.max(2, size/10)}px solid ${color}; border-bottom:${Math.max(2, size/10)}px solid ${color}; padding:${size/5}px 0; transform:skewX(-10deg);">`;
-        lines.forEach(line => {
-            html += `<div style="line-height:1; font-style:italic; text-transform:uppercase;">${line}</div>`;
-        });
-        html += `</div>`;
-        contentDiv.innerHTML = html;
-        contentDiv.style.border = 'none';
-        contentDiv.style.borderRadius = '0';
-        contentDiv.style.padding = '0';
-    }
-    else if (currentTextStyle === 'poster') {
-        const lines = text.split('\n');
-        let html = `<div style="border:${Math.max(3, size/10)}px solid ${color}; padding:${size}px ${size*1.5}px; display:flex; flex-direction:column; align-items:center; text-align:center;">`;
-        html += `<i class="fas fa-star" style="font-size:${size*0.8}px; color:${color}; margin-bottom:${size/2}px;"></i>`;
-        
-        lines.forEach((line, i) => {
-            if (i === 0) { // SPEND
-                html += `<div style="font-family:Arial,sans-serif; font-weight:bold; font-size:${size*0.8}px; letter-spacing:${size/2}px; text-transform:uppercase; margin-left:${size/2}px;">${line}</div>`;
-            } else if (i === 1) { // TIME WITH
-                html += `<div style="font-family:Impact,sans-serif; font-size:${size*1.2}px; text-transform:uppercase; margin-top:${size/5}px;">${line}</div>`;
-            } else if (i === 2) { // the people
-                html += `<div style="display:flex; align-items:center; gap:${size/2}px; margin:${size/2}px 0;">
-                            <div style="flex:1; height:1px; border-top:2px solid ${color}; border-bottom:2px solid ${color}; width:${size*2}px; height:${Math.max(3, size/8)}px;"></div>
-                            <div style="font-family:'Georgia',serif; font-style:italic; font-size:${size*0.9}px; white-space:nowrap;">${line}</div>
-                            <div style="flex:1; height:1px; border-top:2px solid ${color}; border-bottom:2px solid ${color}; width:${size*2}px; height:${Math.max(3, size/8)}px;"></div>
-                        </div>`;
-            } else if (i === 3) { // WHO MAKES
-                html += `<div style="background:${color}; color:black; font-family:Arial,sans-serif; font-weight:bold; font-size:${size*0.6}px; padding:${size/4}px ${size}px; text-transform:uppercase;">${line}</div>`;
-            } else { // you happy.
-                html += `<div style="font-family:'Brush Script MT',cursive; font-size:${size*1.3}px; margin-top:${size/4}px;">${line}</div>`;
-            }
-        });
-        
-        html += `</div>`;
-        contentDiv.innerHTML = html;
-        contentDiv.style.border = 'none';
-        contentDiv.style.borderRadius = '0';
-        contentDiv.style.padding = '0';
-    }
-    else if (currentTextStyle === 'neon') {
-        contentDiv.innerHTML = text.replace(/\n/g, '<br>');
-        contentDiv.style.fontFamily = "'Courier New', monospace";
-        contentDiv.style.fontWeight = 'bold';
-        contentDiv.style.color = '#fff';
-        contentDiv.style.textShadow = `0 0 ${size/6}px ${color}, 0 0 ${size/3}px ${color}, 0 0 ${size*0.8}px ${color}`;
-        contentDiv.style.border = 'none';
-        contentDiv.style.padding = '0';
-        contentDiv.style.borderRadius = '0';
-    }
-    else if (currentTextStyle === 'burbuja') {
-        contentDiv.innerHTML = text.replace(/\n/g, '<br>');
-        contentDiv.style.fontFamily = "Arial, sans-serif";
-        contentDiv.style.fontWeight = '900';
-        contentDiv.style.color = color;
-        contentDiv.style.webkitTextStroke = `${Math.max(2, size/10)}px white`;
-        contentDiv.style.filter = `drop-shadow(0 ${Math.max(2, size/15)}px ${Math.max(2, size/15)}px rgba(0,0,0,0.3))`;
-        contentDiv.style.border = 'none';
-        contentDiv.style.padding = '0';
-        contentDiv.style.borderRadius = '0';
-    }
-    else if (currentTextStyle === 'sombra3d') {
-        contentDiv.innerHTML = text.replace(/\n/g, '<br>').toUpperCase();
-        contentDiv.style.fontFamily = "Impact, sans-serif";
-        contentDiv.style.color = color;
-        const shadowOffset = Math.max(2, size/8);
-        contentDiv.style.textShadow = `${shadowOffset}px ${shadowOffset}px 0px black`;
-        contentDiv.style.border = 'none';
-        contentDiv.style.padding = '0';
-        contentDiv.style.borderRadius = '0';
-    }
-    else if (currentTextStyle === 'elegante') {
-        const lines = text.split('\n');
-        let html = `<div style="border-top:1px solid ${color}; border-bottom:1px solid ${color}; padding:${size/4}px 0;">`;
-        lines.forEach(line => {
-            html += `<div style="font-family:'Georgia',serif; letter-spacing:${size/3}px; text-transform:uppercase; margin-right:-${size/3}px;">${line}</div>`;
-        });
-        html += `</div>`;
-        contentDiv.innerHTML = html;
-        contentDiv.style.border = 'none';
-        contentDiv.style.padding = '0';
-        contentDiv.style.borderRadius = '0';
-    }
-    else if (currentTextStyle === 'cita') {
-        contentDiv.innerHTML = `
-            <div style="position:relative; display:inline-block; padding:${size/2}px ${size}px;">
-                <span style="font-family:'Georgia',serif; font-size:${size*3}px; position:absolute; top:-${size/2}px; left:0; opacity:0.3; color:${color}; line-height:1;">"</span>
-                <span style="font-family:'Georgia',serif; font-style:italic;">${text.replace(/\n/g, '<br>')}</span>
-                <span style="font-family:'Georgia',serif; font-size:${size*3}px; position:absolute; bottom:-${size}px; right:0; opacity:0.3; color:${color}; line-height:1;">"</span>
-            </div>
-        `;
-        contentDiv.style.border = 'none';
-        contentDiv.style.padding = '0';
-        contentDiv.style.borderRadius = '0';
-    }
-    else if (currentTextStyle === 'minimalista') {
-        contentDiv.innerHTML = `
-            <div style="border: 1px solid ${color}; padding: ${size/2}px ${size}px; display:inline-block;">
-                <span style="font-family:Arial,sans-serif; letter-spacing:${size/3}px; text-transform:uppercase; margin-right:-${size/3}px;">${text.replace(/\n/g, '<br>')}</span>
-            </div>
-        `;
-        contentDiv.style.border = 'none';
-        contentDiv.style.padding = '0';
-        contentDiv.style.borderRadius = '0';
-    }
-    else if (currentTextStyle === 'sello') {
-        contentDiv.innerHTML = `
-            <div style="border: ${Math.max(2, size/10)}px double ${color}; border-radius: 50%; padding: ${size}px; display:flex; justify-content:center; align-items:center; text-align:center;">
-                <span style="font-family:'Times New Roman',serif; font-weight:bold; text-transform:uppercase;">${text.replace(/\n/g, '<br>')}</span>
-            </div>
-        `;
-        contentDiv.style.border = 'none';
-        contentDiv.style.padding = '0';
-        contentDiv.style.borderRadius = '0';
-    }
-    else if (currentTextStyle === 'firma') {
-        contentDiv.innerHTML = `
-            <div style="display:flex; flex-direction:column; align-items:center;">
-                <span style="font-family:'Brush Script MT',cursive; font-size:${size*1.5}px;">${text.replace(/\n/g, '<br>')}</span>
-                <div style="width:100%; height:${Math.max(2, size/15)}px; background:${color}; border-radius:50%; transform:rotate(-5deg); margin-top:-${size/4}px;"></div>
-            </div>
-        `;
-        contentDiv.style.border = 'none';
-        contentDiv.style.padding = '0';
-        contentDiv.style.borderRadius = '0';
-    }
-    else if (currentTextStyle === 'cinta') {
-        const lines = text.split('\n');
-        let html = '';
-        lines.forEach((line, i) => {
-            html += `<div style="background:${color}; display:inline-block; padding:${size/4}px ${size}px; margin-bottom:${size/10}px;">
-                        <span style="font-family:Arial,sans-serif; font-weight:bold; color:var(--bg-main); text-transform:uppercase;">${line}</span>
-                    </div><br>`;
-        });
-        contentDiv.innerHTML = html;
-        contentDiv.style.border = 'none';
-        contentDiv.style.padding = '0';
-        contentDiv.style.borderRadius = '0';
-    }
-    else if (currentTextStyle === 'retro') {
-        contentDiv.innerHTML = text.replace(/\n/g, '<br>').toUpperCase();
-        contentDiv.style.fontFamily = "Impact, sans-serif";
-        contentDiv.style.fontStyle = "italic";
-        contentDiv.style.color = "transparent";
-        contentDiv.style.webkitTextStroke = `1px ${color}`;
-        const offset = Math.max(2, size/10);
-        contentDiv.style.textShadow = `${offset}px ${offset}px 0px ${color}`;
-        contentDiv.style.transform = `rotate(-10deg)`;
-        contentDiv.style.border = 'none';
-        contentDiv.style.padding = '0';
-        contentDiv.style.borderRadius = '0';
-    }
-    else if (currentTextStyle === 'vertical') {
-        const lines = text.split('\n');
-        let html = `<div style="display:flex; gap:${size}px;">`;
-        const rawLines = rawText.split('\n');
-        lines.forEach((line, li) => {
-            html += `<div style="display:flex; flex-direction:column; align-items:center; line-height:1; font-family:Arial,sans-serif; font-weight:bold;">`;
-            const chars = Array.from(rawLines[li] || '');
-            for (let i=0; i<chars.length; i++) {
-                html += `<div>${escapeHtml(chars[i].toUpperCase())}</div>`;
-            }
-            html += `</div>`;
-        });
-        html += `</div>`;
-        contentDiv.innerHTML = html;
-        contentDiv.style.border = 'none';
-        contentDiv.style.padding = '0';
-        contentDiv.style.borderRadius = '0';
-    }
-    else if (currentTextStyle === 'romantico') {
-        contentDiv.innerHTML = `
-            <div style="display:flex; align-items:center; gap:${size/2}px;">
-                <span style="font-family:'Georgia',serif; font-style:italic;">~</span>
-                <span style="font-family:'Georgia',serif; font-style:italic;">${text.replace(/\n/g, '<br>')}</span>
-                <span style="font-family:'Georgia',serif; font-style:italic;">~</span>
-            </div>
-        `;
-        contentDiv.style.border = 'none';
-        contentDiv.style.padding = '0';
-        contentDiv.style.borderRadius = '0';
-    }
-    
     if (DOM.valTextSize) DOM.valTextSize.textContent = `${size}px`;
     if (DOM.valTextOpacity) DOM.valTextOpacity.textContent = `${DOM.textOpacity.value}%`;
 }
@@ -2224,437 +2489,20 @@ if (DOM.btnApplyText) {
         const textWidthPx = overlayRect.width * scaleX;
         const textHeightPx = overlayRect.height * scaleY;
         
-        // Draw directly to originalImageData context
+        // Se dibuja con el mismo motor que la vista previa, a la resolución real de la foto
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = originalImageData.width;
         tempCanvas.height = originalImageData.height;
         const tCtx = tempCanvas.getContext('2d');
         tCtx.putImageData(originalImageData, 0, 0);
-        
-        const fontSize = DOM.textSize.value * scaleY;
-        tCtx.font = `${fontSize}px ${DOM.textFont.value}`;
-        tCtx.fillStyle = DOM.textColor.value;
-        tCtx.strokeStyle = DOM.textColor.value;
+        const rendered = window.TextStyles.render(currentTextStyle, text, {
+            size: DOM.textSize.value * scaleY, font: DOM.textFont.value, color: DOM.textColor.value
+        });
+        // Ajuste fino: mismo tamaño en pantalla que la vista previa
+        const drawW = textWidthPx, drawH = textHeightPx;
         tCtx.globalAlpha = DOM.textOpacity.value / 100;
-        tCtx.textBaseline = 'middle';
-        tCtx.textAlign = 'center';
-        
-        const lines = text.split('\n');
-        const lineHeight = fontSize * 1.2;
-        
-        if (currentTextStyle === 'basico') {
-            const startY = centerY - ((lines.length - 1) * lineHeight) / 2;
-            lines.forEach((line, index) => {
-                tCtx.fillText(line, centerX, startY + (index * lineHeight));
-            });
-        }
-        else if (currentTextStyle === 'bloque') {
-            tCtx.font = `bold ${fontSize}px ${DOM.textFont.value}`;
-            const tightLineHeight = fontSize * 0.85; // compact stacking
-            const startY = centerY - ((lines.length - 1) * tightLineHeight) / 2;
-            lines.forEach((line, index) => {
-                tCtx.fillText(line.toUpperCase(), centerX, startY + (index * tightLineHeight));
-            });
-        }
-        else if (currentTextStyle === 'cursiva') {
-            tCtx.font = `${fontSize}px 'Brush Script MT', cursive`;
-            const startY = centerY - ((lines.length - 1) * lineHeight) / 2;
-            lines.forEach((line, index) => {
-                tCtx.fillText(line, centerX, startY + (index * lineHeight));
-            });
-        }
-        else if (currentTextStyle === 'accion') {
-            tCtx.font = `italic bold ${fontSize}px ${DOM.textFont.value}`;
-            
-            // Need to save context to apply transform (skew)
-            tCtx.save();
-            tCtx.translate(centerX, centerY);
-            tCtx.transform(1, 0, Math.tan(-10 * Math.PI / 180), 1, 0, 0); // Skew X by -10 degrees
-            
-            let maxW = 0;
-            lines.forEach(line => maxW = Math.max(maxW, tCtx.measureText(line.toUpperCase()).width));
-            
-            const startY = -((lines.length - 1) * lineHeight) / 2;
-            const boxH = lines.length * lineHeight;
-            
-            // Draw top and bottom lines
-            tCtx.lineWidth = Math.max(2, fontSize/10);
-            tCtx.beginPath();
-            tCtx.moveTo(-maxW/2 - fontSize*0.2, startY - fontSize*0.6);
-            tCtx.lineTo(maxW/2 + fontSize*0.2, startY - fontSize*0.6);
-            tCtx.moveTo(-maxW/2 - fontSize*0.2, startY + boxH - fontSize*0.3);
-            tCtx.lineTo(maxW/2 + fontSize*0.2, startY + boxH - fontSize*0.3);
-            tCtx.stroke();
-            
-            lines.forEach((line, index) => {
-                tCtx.fillText(line.toUpperCase(), 0, startY + (index * lineHeight));
-            });
-            
-            tCtx.restore();
-        }
-        else if (currentTextStyle === 'poster') {
-            const numLines = lines.length;
-            const blockHeight = numLines * lineHeight + fontSize * 2; 
-            let currentY = centerY - blockHeight / 2 + fontSize;
-
-            let maxTextW = 0;
-            lines.forEach((line, i) => {
-                if (i===0) tCtx.font = `bold ${fontSize*0.8}px Arial, sans-serif`;
-                else if (i===1) tCtx.font = `${fontSize*1.2}px Impact, sans-serif`;
-                else if (i===2) tCtx.font = `italic ${fontSize*0.9}px 'Georgia', serif`;
-                else if (i===3) tCtx.font = `bold ${fontSize*0.6}px Arial, sans-serif`;
-                else tCtx.font = `${fontSize*1.3}px 'Brush Script MT', cursive`;
-                
-                let w = tCtx.measureText(i===0||i===1||i===3 ? line.toUpperCase() : line).width;
-                if (i===0) w += line.length * (fontSize/2); // letter spacing approximate
-                maxTextW = Math.max(maxTextW, w);
-            });
-            
-            const boxW = maxTextW + fontSize * 3;
-            const boxH = blockHeight + fontSize;
-            
-            // Draw outer border
-            tCtx.lineWidth = Math.max(3, fontSize/10);
-            tCtx.strokeRect(centerX - boxW/2, centerY - boxH/2, boxW, boxH);
-
-            // Draw a star at the top
-            const starY = centerY - boxH/2 + fontSize;
-            tCtx.beginPath();
-            const r = fontSize * 0.4;
-            for(let i=0; i<5; i++) {
-                tCtx.lineTo(Math.cos((18+i*72)/180*Math.PI)*r + centerX, -Math.sin((18+i*72)/180*Math.PI)*r + starY);
-                tCtx.lineTo(Math.cos((54+i*72)/180*Math.PI)*(r/2) + centerX, -Math.sin((54+i*72)/180*Math.PI)*(r/2) + starY);
-            }
-            tCtx.closePath();
-            tCtx.fill();
-            
-            currentY = starY + fontSize*1.2;
-
-            lines.forEach((line, index) => {
-                if (index === 0) { // SPEND
-                    tCtx.font = `bold ${fontSize * 0.8}px Arial, sans-serif`;
-                    const chars = line.toUpperCase().split('');
-                    const spacing = fontSize / 2;
-                    const totalW = tCtx.measureText(line.toUpperCase()).width + (chars.length - 1) * spacing;
-                    let startX = centerX - totalW / 2;
-                    chars.forEach(ch => {
-                        tCtx.fillText(ch, startX + tCtx.measureText(ch).width/2, currentY);
-                        startX += tCtx.measureText(ch).width + spacing;
-                    });
-                    currentY += lineHeight;
-                } else if (index === 1) { // TIME WITH
-                    tCtx.font = `${fontSize * 1.2}px Impact, sans-serif`;
-                    tCtx.fillText(line.toUpperCase(), centerX, currentY);
-                    currentY += lineHeight;
-                } else if (index === 2) { // the people
-                    tCtx.font = `italic ${fontSize * 0.9}px 'Georgia', serif`;
-                    tCtx.fillText(line, centerX, currentY);
-                    
-                    const textW = tCtx.measureText(line).width;
-                    const lineSpacing = fontSize/6;
-                    tCtx.lineWidth = Math.max(2, fontSize/15);
-                    
-                    // Left lines
-                    tCtx.beginPath();
-                    tCtx.moveTo(centerX - textW/2 - fontSize*1.5, currentY - lineSpacing);
-                    tCtx.lineTo(centerX - textW/2 - fontSize*0.2, currentY - lineSpacing);
-                    tCtx.moveTo(centerX - textW/2 - fontSize*1.5, currentY + lineSpacing);
-                    tCtx.lineTo(centerX - textW/2 - fontSize*0.2, currentY + lineSpacing);
-                    tCtx.stroke();
-                    
-                    // Right lines
-                    tCtx.beginPath();
-                    tCtx.moveTo(centerX + textW/2 + fontSize*0.2, currentY - lineSpacing);
-                    tCtx.lineTo(centerX + textW/2 + fontSize*1.5, currentY - lineSpacing);
-                    tCtx.moveTo(centerX + textW/2 + fontSize*0.2, currentY + lineSpacing);
-                    tCtx.lineTo(centerX + textW/2 + fontSize*1.5, currentY + lineSpacing);
-                    tCtx.stroke();
-                    
-                    currentY += lineHeight;
-                } else if (index === 3) { // WHO MAKES (Banner)
-                    tCtx.font = `bold ${fontSize * 0.6}px Arial, sans-serif`;
-                    const textW = tCtx.measureText(line.toUpperCase()).width;
-                    const pad = fontSize/2;
-                    
-                    // Banner background
-                    tCtx.fillStyle = DOM.textColor.value;
-                    tCtx.fillRect(centerX - textW/2 - pad, currentY - fontSize*0.5, textW + pad*2, fontSize);
-                    
-                    // Banner tails
-                    tCtx.beginPath();
-                    tCtx.moveTo(centerX - textW/2 - pad, currentY - fontSize*0.5);
-                    tCtx.lineTo(centerX - textW/2 - pad - fontSize*0.4, currentY);
-                    tCtx.lineTo(centerX - textW/2 - pad, currentY + fontSize*0.5);
-                    tCtx.fill();
-                    
-                    tCtx.beginPath();
-                    tCtx.moveTo(centerX + textW/2 + pad, currentY - fontSize*0.5);
-                    tCtx.lineTo(centerX + textW/2 + pad + fontSize*0.4, currentY);
-                    tCtx.lineTo(centerX + textW/2 + pad, currentY + fontSize*0.5);
-                    tCtx.fill();
-                    
-                    // Inverse text color
-                    tCtx.fillStyle = 'rgba(0,0,0,0.8)';
-                    tCtx.fillText(line.toUpperCase(), centerX, currentY);
-                    tCtx.fillStyle = DOM.textColor.value; // restore
-                    
-                    currentY += lineHeight * 1.2;
-                } else { // you happy.
-                    tCtx.font = `${fontSize * 1.3}px 'Brush Script MT', cursive`;
-                    tCtx.fillText(line, centerX, currentY);
-                    currentY += lineHeight;
-                }
-            });
-        }
-        else if (currentTextStyle === 'neon') {
-            tCtx.font = `bold ${fontSize}px 'Courier New', monospace`;
-            const startY = centerY - ((lines.length - 1) * lineHeight) / 2;
-            
-            tCtx.shadowColor = DOM.textColor.value;
-            
-            lines.forEach((line, index) => {
-                const y = startY + (index * lineHeight);
-                
-                // Draw multiple layers of glow
-                tCtx.shadowBlur = fontSize * 0.8;
-                tCtx.fillText(line, centerX, y);
-                
-                tCtx.shadowBlur = fontSize / 3;
-                tCtx.fillText(line, centerX, y);
-                
-                tCtx.shadowBlur = fontSize / 6;
-                tCtx.fillText(line, centerX, y);
-                
-                // Draw inner white core
-                tCtx.shadowBlur = 0;
-                tCtx.fillStyle = '#ffffff';
-                tCtx.fillText(line, centerX, y);
-                tCtx.fillStyle = DOM.textColor.value; // restore
-            });
-            tCtx.shadowBlur = 0;
-        }
-        else if (currentTextStyle === 'burbuja') {
-            tCtx.font = `900 ${fontSize}px Arial, sans-serif`;
-            const startY = centerY - ((lines.length - 1) * lineHeight) / 2;
-            
-            tCtx.shadowColor = 'rgba(0,0,0,0.3)';
-            tCtx.shadowBlur = Math.max(2, fontSize/15);
-            tCtx.shadowOffsetY = Math.max(2, fontSize/15);
-            
-            lines.forEach((line, index) => {
-                const y = startY + (index * lineHeight);
-                tCtx.lineWidth = Math.max(2, fontSize/10);
-                tCtx.strokeStyle = 'white';
-                
-                // Draw stroke first
-                tCtx.strokeText(line, centerX, y);
-                // Draw fill without shadow
-                tCtx.shadowColor = 'transparent';
-                tCtx.fillText(line, centerX, y);
-                tCtx.shadowColor = 'rgba(0,0,0,0.3)'; // restore for next line
-            });
-            tCtx.shadowColor = 'transparent';
-        }
-        else if (currentTextStyle === 'sombra3d') {
-            tCtx.font = `${fontSize}px Impact, sans-serif`;
-            const startY = centerY - ((lines.length - 1) * lineHeight) / 2;
-            const shadowOffset = Math.max(2, fontSize/8);
-            
-            lines.forEach((line, index) => {
-                const y = startY + (index * lineHeight);
-                // Draw shadow
-                tCtx.fillStyle = 'black';
-                tCtx.fillText(line.toUpperCase(), centerX + shadowOffset, y + shadowOffset);
-                // Draw text
-                tCtx.fillStyle = DOM.textColor.value;
-                tCtx.fillText(line.toUpperCase(), centerX, y);
-            });
-        }
-        else if (currentTextStyle === 'elegante') {
-            tCtx.font = `${fontSize}px 'Georgia', serif`;
-            const startY = centerY - ((lines.length - 1) * lineHeight) / 2;
-            let maxW = 0;
-            lines.forEach(line => maxW = Math.max(maxW, tCtx.measureText(line.toUpperCase()).width + line.length * (fontSize/3)));
-            
-            const boxH = lines.length * lineHeight;
-            
-            tCtx.lineWidth = 1;
-            tCtx.beginPath();
-            tCtx.moveTo(centerX - maxW/2, startY - fontSize*0.6);
-            tCtx.lineTo(centerX + maxW/2, startY - fontSize*0.6);
-            tCtx.moveTo(centerX - maxW/2, startY + boxH - fontSize*0.3);
-            tCtx.lineTo(centerX + maxW/2, startY + boxH - fontSize*0.3);
-            tCtx.stroke();
-            
-            lines.forEach((line, index) => {
-                const chars = line.toUpperCase().split('');
-                const spacing = fontSize / 3;
-                const totalW = tCtx.measureText(line.toUpperCase()).width + (chars.length - 1) * spacing;
-                let startX = centerX - totalW / 2;
-                chars.forEach(ch => {
-                    tCtx.fillText(ch, startX + tCtx.measureText(ch).width/2, startY + (index * lineHeight));
-                    startX += tCtx.measureText(ch).width + spacing;
-                });
-            });
-        }
-        else if (currentTextStyle === 'cita') {
-            tCtx.font = `italic ${fontSize}px 'Georgia', serif`;
-            const startY = centerY - ((lines.length - 1) * lineHeight) / 2;
-            let maxW = 0;
-            lines.forEach(line => maxW = Math.max(maxW, tCtx.measureText(line).width));
-            
-            tCtx.fillStyle = DOM.textColor.value;
-            lines.forEach((line, index) => {
-                tCtx.fillText(line, centerX, startY + (index * lineHeight));
-            });
-            
-            // Draw quotes
-            tCtx.font = `${fontSize * 3}px 'Georgia', serif`;
-            tCtx.globalAlpha = (DOM.textOpacity.value / 100) * 0.3;
-            tCtx.fillText('"', centerX - maxW/2 - fontSize, startY + fontSize*0.5);
-            tCtx.fillText('"', centerX + maxW/2 + fontSize, startY + (lines.length-1)*lineHeight + fontSize*1.5);
-            tCtx.globalAlpha = DOM.textOpacity.value / 100;
-        }
-        else if (currentTextStyle === 'minimalista') {
-            tCtx.font = `${fontSize}px Arial, sans-serif`;
-            const startY = centerY - ((lines.length - 1) * lineHeight) / 2;
-            let maxW = 0;
-            lines.forEach(line => maxW = Math.max(maxW, tCtx.measureText(line.toUpperCase()).width + line.length * (fontSize/3)));
-            
-            const boxW = maxW + fontSize;
-            const boxH = lines.length * lineHeight + fontSize;
-            
-            tCtx.lineWidth = 1;
-            tCtx.strokeRect(centerX - boxW/2, centerY - boxH/2 + fontSize*0.2, boxW, boxH);
-            
-            lines.forEach((line, index) => {
-                const chars = line.toUpperCase().split('');
-                const spacing = fontSize / 3;
-                const totalW = tCtx.measureText(line.toUpperCase()).width + (chars.length - 1) * spacing;
-                let startX = centerX - totalW / 2;
-                chars.forEach(ch => {
-                    tCtx.fillText(ch, startX + tCtx.measureText(ch).width/2, startY + (index * lineHeight));
-                    startX += tCtx.measureText(ch).width + spacing;
-                });
-            });
-        }
-        else if (currentTextStyle === 'sello') {
-            tCtx.font = `bold ${fontSize}px 'Times New Roman', serif`;
-            const startY = centerY - ((lines.length - 1) * lineHeight) / 2;
-            let maxW = 0;
-            lines.forEach(line => maxW = Math.max(maxW, tCtx.measureText(line.toUpperCase()).width));
-            
-            const radius = Math.max(maxW, lines.length * lineHeight) / 2 + fontSize;
-            
-            tCtx.lineWidth = Math.max(2, fontSize/10);
-            tCtx.beginPath();
-            tCtx.arc(centerX, centerY + fontSize*0.2, radius, 0, Math.PI * 2);
-            tCtx.stroke();
-            
-            tCtx.beginPath();
-            tCtx.arc(centerX, centerY + fontSize*0.2, radius - fontSize*0.2, 0, Math.PI * 2);
-            tCtx.stroke();
-            
-            lines.forEach((line, index) => {
-                tCtx.fillText(line.toUpperCase(), centerX, startY + (index * lineHeight));
-            });
-        }
-        else if (currentTextStyle === 'firma') {
-            tCtx.font = `${fontSize * 1.5}px 'Brush Script MT', cursive`;
-            const startY = centerY - ((lines.length - 1) * lineHeight) / 2;
-            let maxW = 0;
-            lines.forEach(line => maxW = Math.max(maxW, tCtx.measureText(line).width));
-            
-            lines.forEach((line, index) => {
-                tCtx.fillText(line, centerX, startY + (index * lineHeight));
-            });
-            
-            // Draw swoosh
-            tCtx.lineWidth = Math.max(2, fontSize/15);
-            tCtx.beginPath();
-            const swooshY = startY + (lines.length - 1) * lineHeight + fontSize;
-            tCtx.ellipse(centerX, swooshY, maxW/1.5, fontSize/6, -5 * Math.PI / 180, 0, 2 * Math.PI);
-            tCtx.fill();
-        }
-        else if (currentTextStyle === 'cinta') {
-            tCtx.font = `bold ${fontSize}px Arial, sans-serif`;
-            const startY = centerY - ((lines.length - 1) * (lineHeight + fontSize/10)) / 2;
-            
-            lines.forEach((line, index) => {
-                const y = startY + (index * (lineHeight + fontSize/10));
-                const textW = tCtx.measureText(line.toUpperCase()).width;
-                
-                tCtx.fillStyle = DOM.textColor.value;
-                tCtx.fillRect(centerX - textW/2 - fontSize, y - fontSize*0.6, textW + fontSize*2, fontSize*1.3);
-                
-                tCtx.fillStyle = '#000000'; // Or fetch background color (black for contrast)
-                tCtx.globalCompositeOperation = 'destination-out';
-                tCtx.fillText(line.toUpperCase(), centerX, y + fontSize*0.1);
-                tCtx.globalCompositeOperation = 'source-over';
-                tCtx.fillStyle = DOM.textColor.value; // Restore
-            });
-        }
-        else if (currentTextStyle === 'retro') {
-            tCtx.font = `italic ${fontSize}px Impact, sans-serif`;
-            const startY = centerY - ((lines.length - 1) * lineHeight) / 2;
-            
-            tCtx.save();
-            tCtx.translate(centerX, centerY);
-            tCtx.rotate(-10 * Math.PI / 180);
-            
-            const shadowOffset = Math.max(2, fontSize/10);
-            
-            lines.forEach((line, index) => {
-                const y = -((lines.length - 1) * lineHeight) / 2 + (index * lineHeight);
-                
-                // Draw shadow
-                tCtx.fillStyle = DOM.textColor.value;
-                tCtx.fillText(line.toUpperCase(), shadowOffset, y + shadowOffset);
-                
-                // Erase center
-                tCtx.globalCompositeOperation = 'destination-out';
-                tCtx.fillText(line.toUpperCase(), 0, y);
-                tCtx.globalCompositeOperation = 'source-over';
-                
-                // Draw stroke
-                tCtx.lineWidth = 2;
-                tCtx.strokeStyle = DOM.textColor.value;
-                tCtx.strokeText(line.toUpperCase(), 0, y);
-            });
-            
-            tCtx.restore();
-        }
-        else if (currentTextStyle === 'vertical') {
-            tCtx.font = `bold ${fontSize}px Arial, sans-serif`;
-            
-            // Calculate total width of all columns to center them
-            const spacingX = fontSize * 1.5;
-            const totalW = (lines.length - 1) * spacingX;
-            const startX = centerX - totalW / 2;
-            
-            lines.forEach((line, colIndex) => {
-                const chars = line.split('');
-                const totalH = (chars.length - 1) * fontSize;
-                const startY = centerY - totalH / 2;
-                
-                chars.forEach((ch, rowIndex) => {
-                    tCtx.fillText(ch.toUpperCase(), startX + (colIndex * spacingX), startY + (rowIndex * fontSize));
-                });
-            });
-        }
-        else if (currentTextStyle === 'romantico') {
-            tCtx.font = `italic ${fontSize}px 'Georgia', serif`;
-            const startY = centerY - ((lines.length - 1) * lineHeight) / 2;
-            
-            lines.forEach((line, index) => {
-                const y = startY + (index * lineHeight);
-                const textW = tCtx.measureText(line).width;
-                
-                tCtx.fillText(line, centerX, y);
-                tCtx.fillText("~", centerX - textW/2 - fontSize, y);
-                tCtx.fillText("~", centerX + textW/2 + fontSize, y);
-            });
-        }
+        tCtx.drawImage(rendered, centerX - drawW / 2, centerY - drawH / 2, drawW, drawH);
+        tCtx.globalAlpha = 1;
         
         originalImageData = tCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
         saveState("Texto Añadido");
@@ -2670,69 +2518,84 @@ if (DOM.btnCancelText) {
     });
 }
 
-// Estilos decorativos
-if (DOM.presetTextBtns) {
-    DOM.presetTextBtns.forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            DOM.presetTextBtns.forEach(b => b.classList.remove('active'));
-            e.currentTarget.classList.add('active');
-            currentTextStyle = e.currentTarget.dataset.style;
-            
-            // Auto-configure some nice fonts for the styles
-            if (['bloque', 'accion', 'sombra3d', 'retro'].includes(currentTextStyle)) {
-                DOM.textFont.value = "Impact, sans-serif";
-            } else if (['cursiva', 'firma', 'romantico'].includes(currentTextStyle)) {
-                DOM.textFont.value = "'Brush Script MT', cursive";
-            } else if (['elegante', 'cita', 'sello'].includes(currentTextStyle)) {
-                DOM.textFont.value = "'Georgia', serif";
-            } else if (['neon'].includes(currentTextStyle)) {
-                DOM.textFont.value = "'Courier New', monospace";
-            } else {
-                DOM.textFont.value = "Arial, sans-serif";
-            }
-            
-            // Auto-format text into multiple lines if needed
-            let text = DOM.textInput.value.trim();
-            if (text && !text.includes('\n') && text.includes(' ')) {
-                const words = text.split(/\s+/);
-                if (words.length > 1) {
-                    if (currentTextStyle === 'poster') {
-                        const numLines = Math.min(words.length, 5);
-                        let formatted = Array(numLines).fill('');
-                        words.forEach((word, i) => {
-                            let lineIndex = Math.floor((i / words.length) * numLines);
-                            formatted[lineIndex] += (formatted[lineIndex] ? ' ' : '') + word;
-                        });
-                        DOM.textInput.value = formatted.join('\n');
-                    } else if (['bloque', 'accion', 'sombra3d', 'retro', 'neon', 'cinta', 'elegante', 'sello'].includes(currentTextStyle)) {
-                        const numLines = Math.min(words.length, 3);
-                        let formatted = Array(numLines).fill('');
-                        words.forEach((word, i) => {
-                            let lineIndex = Math.floor((i / words.length) * numLines);
-                            formatted[lineIndex] += (formatted[lineIndex] ? ' ' : '') + word;
-                        });
-                        DOM.textInput.value = formatted.join('\n');
-                    } else if (currentTextStyle === 'cita' || currentTextStyle === 'romantico') {
-                        const numLines = Math.min(words.length, 2);
-                        let formatted = Array(numLines).fill('');
-                        words.forEach((word, i) => {
-                            let lineIndex = Math.floor((i / words.length) * numLines);
-                            formatted[lineIndex] += (formatted[lineIndex] ? ' ' : '') + word;
-                        });
-                        DOM.textInput.value = formatted.join('\n');
-                    } else if (currentTextStyle === 'vertical') {
-                        DOM.textInput.value = words.join('\n');
-                    }
-                }
-            } else if (text && !text.includes('\n') && currentTextStyle === 'vertical') {
-                // if it's a single word, split characters
-                DOM.textInput.value = text.split('').join('\n');
-            }
-            
-            updateTextPreview();
-        });
+// Estilos decorativos: botones con una muestra dibujada por el mismo motor
+const textStyleList = document.getElementById('text-style-list');
+
+function fillFontSelect() {
+    if (!window.TextStyles || !DOM.textFont) return;
+    DOM.textFont.innerHTML = '';
+    window.TextStyles.fonts.forEach(([name, stack]) => {
+        const opt = document.createElement('option');
+        opt.value = stack; opt.textContent = name;
+        opt.style.fontFamily = stack;
+        DOM.textFont.appendChild(opt);
     });
 }
+
+function setFontSelect(stack) {
+    const exists = Array.from(DOM.textFont.options).some(o => o.value === stack);
+    if (!exists) {
+        const opt = document.createElement('option');
+        opt.value = stack; opt.textContent = 'Del estilo';
+        DOM.textFont.appendChild(opt);
+    }
+    DOM.textFont.value = stack;
+}
+
+async function buildTextStyleButtons() {
+    if (!textStyleList || !window.TextStyles) return;
+    await window.TextStyles.ensureFonts();
+    const color = DOM.textColor.value;
+    const dark = window.TextStyles.luminance(color) > 0.55;
+    textStyleList.innerHTML = '';
+    window.TextStyles.list.forEach(st => {
+        const btn = document.createElement('button');
+        btn.className = 'text-style-btn' + (st.id === currentTextStyle ? ' active' : '');
+        btn.dataset.style = st.id;
+        btn.style.background = dark ? '#3b3b3b' : '#f1f1f1';
+        const img = window.TextStyles.render(st.id, st.sample, { size: 26, font: st.font, color });
+        img.className = 'text-style-thumb';
+        const label = document.createElement('span');
+        label.textContent = st.name;
+        btn.append(img, label);
+        btn.addEventListener('click', () => selectTextStyle(st.id));
+        textStyleList.appendChild(btn);
+    });
+}
+
+function selectTextStyle(id) {
+    const st = window.TextStyles.list.find(s => s.id === id);
+    if (!st) return;
+    currentTextStyle = id;
+    textStyleList.querySelectorAll('.text-style-btn').forEach(b => b.classList.toggle('active', b.dataset.style === id));
+    setFontSelect(st.font);
+
+    // Repartir en líneas automáticamente si el estilo lo pide
+    const text = DOM.textInput.value.trim();
+    if (text && !text.includes('\n') && text.includes(' ')) {
+        const words = text.split(/\s+/);
+        const split = n => {
+            const out = Array(n).fill('');
+            words.forEach((w, i) => { const k = Math.floor(i / words.length * n); out[k] += (out[k] ? ' ' : '') + w; });
+            return out.join('\n');
+        };
+        if (id === 'poster') DOM.textInput.value = split(Math.min(words.length, 5));
+        else if (['bloque', 'accion', 'sombra3d', 'cinta', 'elegante', 'sello', 'etiqueta', 'dymo'].includes(id)) DOM.textInput.value = split(Math.min(words.length, 3));
+        else if (['cita', 'romantico'].includes(id)) DOM.textInput.value = split(Math.min(words.length, 2));
+        else if (id === 'vertical') DOM.textInput.value = words.join('\n');
+    }
+    updateTextPreview();
+}
+
+fillFontSelect();
+if (DOM.textColor) {
+    let colorTimer = null;
+    DOM.textColor.addEventListener('input', () => {
+        clearTimeout(colorTimer);
+        colorTimer = setTimeout(buildTextStyleButtons, 150);
+    });
+}
+if (DOM.btnText) DOM.btnText.addEventListener('click', () => { if (hasImage) buildTextStyleButtons(); });
 
 // --- Librerías bajo demanda (están en la misma carpeta, funcionan sin internet) ---
 const loadedLibs = {};
@@ -2944,7 +2807,291 @@ if (DOM.btnPdfDocs && DOM.pdfDocsInput) {
     });
 }
 
-// --- LOGICA DE EXPORTACION PDF A WORD / PAGES ---
+// --- LOGICA DE EXPORTACION PDF A WORD / PAGES (EDITABLE) ---
+// Saca del PDF el texto (con tamaño, negrita y cursiva) y las fotos por separado,
+// para que el Word se pueda editar. Las páginas escaneadas (sin texto) se ponen como imagen.
+
+const PT_TO_PX = 96 / 72;      // puntos PDF -> píxeles de Word
+const PT_TO_TWIP = 20;         // puntos PDF -> unidades de Word
+
+function cleanFontName(raw) {
+    if (!raw) return undefined;
+    let name = String(raw).replace(/^[A-Z]{6}\+/, '');           // quitar prefijo de subconjunto
+    name = name.split(/[-,]/)[0].replace(/(PSMT|PS|MT)$/,'');    // quitar estilo y sufijos
+    const known = { Helvetica: 'Arial', Times: 'Times New Roman', TimesNewRoman: 'Times New Roman', Courier: 'Courier New', CourierNew: 'Courier New' };
+    if (known[name]) return known[name];
+    name = name.replace(/([a-z])([A-Z])/g, '$1 $2').trim();
+    return name || undefined;
+}
+
+function getPdfObj(objs, id) {
+    return new Promise(resolve => {
+        try { objs.get(id, resolve); } catch (e) { resolve(null); }
+    });
+}
+
+// Convierte una imagen interna de pdf.js en PNG/JPEG
+async function pdfImageToBlob(img) {
+    if (!img) return null;
+    const w = img.width || (img.bitmap && img.bitmap.width);
+    const h = img.height || (img.bitmap && img.bitmap.height);
+    if (!w || !h) return null;
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const cx = c.getContext('2d');
+    if (img.bitmap) {
+        cx.drawImage(img.bitmap, 0, 0);
+    } else if (img.data) {
+        const out = cx.createImageData(w, h);
+        const src = img.data, dst = out.data;
+        if (img.kind === 3) {                         // RGBA
+            dst.set(src.subarray(0, dst.length));
+        } else if (img.kind === 2) {                  // RGB
+            for (let i = 0, j = 0; j < dst.length; i += 3, j += 4) {
+                dst[j] = src[i]; dst[j + 1] = src[i + 1]; dst[j + 2] = src[i + 2]; dst[j + 3] = 255;
+            }
+        } else if (img.kind === 1) {                  // blanco y negro, 1 bit
+            const rowBytes = (w + 7) >> 3;
+            for (let y = 0; y < h; y++) {
+                for (let x = 0; x < w; x++) {
+                    const bit = (src[y * rowBytes + (x >> 3)] >> (7 - (x & 7))) & 1;
+                    const v = bit ? 255 : 0, j = (y * w + x) * 4;
+                    dst[j] = dst[j + 1] = dst[j + 2] = v; dst[j + 3] = 255;
+                }
+            }
+        } else {
+            return null;
+        }
+        cx.putImageData(out, 0, 0);
+    } else {
+        return null;
+    }
+    return canvasToBlob(c, 'image/png');
+}
+
+function multiplyMatrix(m1, m2) {
+    return [
+        m1[0] * m2[0] + m1[2] * m2[1], m1[1] * m2[0] + m1[3] * m2[1],
+        m1[0] * m2[2] + m1[2] * m2[3], m1[1] * m2[2] + m1[3] * m2[3],
+        m1[0] * m2[4] + m1[2] * m2[5] + m1[4], m1[1] * m2[4] + m1[3] * m2[5] + m1[5]
+    ];
+}
+
+// Fotos de la página con su posición (en puntos, desde arriba)
+async function extractPageImages(page, opList, pdfjsLib, viewport) {
+    const OPS = pdfjsLib.OPS;
+    const images = [];
+    let ctm = [1, 0, 0, 1, 0, 0];
+    const stack = [];
+    for (let i = 0; i < opList.fnArray.length; i++) {
+        const fn = opList.fnArray[i], args = opList.argsArray[i];
+        if (fn === OPS.save) stack.push(ctm.slice());
+        else if (fn === OPS.restore) ctm = stack.pop() || [1, 0, 0, 1, 0, 0];
+        else if (fn === OPS.transform) ctm = multiplyMatrix(ctm, args);
+        else if (fn === OPS.paintImageXObject || fn === OPS.paintInlineImageXObject) {
+            const m = multiplyMatrix(viewport.transform, ctm);
+            const wPt = Math.hypot(m[0], m[1]);
+            const hPt = Math.hypot(m[2], m[3]);
+            if (wPt < 15 || hPt < 15) continue;               // iconos y adornos diminutos
+            const xs = [m[4], m[4] + m[0], m[4] + m[2], m[4] + m[0] + m[2]];
+            const ys = [m[5], m[5] + m[1], m[5] + m[3], m[5] + m[1] + m[3]];
+            let imgObj = null;
+            if (fn === OPS.paintInlineImageXObject) imgObj = args[0];
+            else {
+                const id = args[0];
+                imgObj = id.startsWith('g_') ? await getPdfObj(page.commonObjs, id) : await getPdfObj(page.objs, id);
+            }
+            const blob = await pdfImageToBlob(imgObj);
+            if (!blob) continue;
+            images.push({ type: 'image', top: Math.min(...ys), bottom: Math.max(...ys), left: Math.min(...xs), width: wPt, height: hPt, blob });
+        }
+    }
+    return images;
+}
+
+// Texto de la página agrupado en líneas y párrafos
+async function extractPageParagraphs(page, pdfjsLib, viewport) {
+    const content = await page.getTextContent();
+    const items = [];
+    for (const it of content.items) {
+        if (!it.str || !it.str.length) continue;
+        const tx = pdfjsLib.Util.transform(viewport.transform, it.transform);
+        const size = Math.hypot(tx[2], tx[3]);
+        if (size < 1) continue;
+        let font = null;
+        try { if (page.commonObjs.has(it.fontName)) font = page.commonObjs.get(it.fontName); } catch (e) {}
+        const fontName = (font && font.name) || '';
+        items.push({
+            str: it.str, x: tx[4], y: tx[5], width: it.width * viewport.scale, size,
+            bold: !!(font && (font.bold || font.black)) || /bold|black|heavy|semibold/i.test(fontName),
+            italic: !!(font && font.italic) || /italic|oblique/i.test(fontName),
+            font: cleanFontName(fontName) || (content.styles[it.fontName] && content.styles[it.fontName].fontFamily !== 'sans-serif' ? content.styles[it.fontName].fontFamily : undefined),
+            eol: it.hasEOL
+        });
+    }
+
+    // Líneas: trozos a la misma altura
+    items.sort((a, b) => (Math.abs(a.y - b.y) < Math.min(a.size, b.size) * 0.5 ? a.x - b.x : a.y - b.y));
+    const lines = [];
+    for (const it of items) {
+        const line = lines[lines.length - 1];
+        if (line && Math.abs(line.y - it.y) < Math.min(line.size, it.size) * 0.5) {
+            const prev = line.runs[line.runs.length - 1];
+            const gap = it.x - (prev.x + prev.width);
+            if (gap > it.size * 0.15 && !/\s$/.test(prev.str) && !/^\s/.test(it.str)) line.runs.push({ ...it, str: ' ', width: 0 });
+            line.runs.push(it);
+            line.right = Math.max(line.right, it.x + it.width);
+            line.size = Math.max(line.size, it.size);
+        } else {
+            lines.push({ y: it.y, x: it.x, right: it.x + it.width, size: it.size, runs: [it] });
+        }
+    }
+
+    // Párrafos: líneas seguidas, con el mismo tamaño y poca separación
+    const pageW = viewport.width;
+    const paras = [];
+    for (const line of lines) {
+        const para = paras[paras.length - 1];
+        const lineCenter = (line.x + line.right) / 2;
+        const centered = Math.abs(lineCenter - pageW / 2) < pageW * 0.04 && (line.right - line.x) < pageW * 0.7;
+        if (para && !para.centered && !centered &&
+            Math.abs(para.size - line.size) < 0.6 &&
+            line.y - para.lastY < line.size * 1.75 &&
+            Math.abs(line.x - para.x) < line.size * 3) {
+            const lastRun = para.runs[para.runs.length - 1];
+            if (/-$/.test(lastRun.str)) lastRun.str = lastRun.str.slice(0, -1);   // palabra partida
+            else if (!/\s$/.test(lastRun.str)) para.runs.push({ ...lastRun, str: ' ' });
+            para.runs.push(...line.runs);
+            para.lastY = line.y;
+            para.bottom = line.y + line.size * 0.25;
+        } else {
+            paras.push({
+                type: 'text', x: line.x, top: line.y - line.size, lastY: line.y, bottom: line.y + line.size * 0.25,
+                size: line.size, centered, runs: line.runs.slice()
+            });
+        }
+    }
+    return paras;
+}
+
+function runsToTextRuns(docx, runs) {
+    // Juntar trozos con el mismo estilo
+    const merged = [];
+    for (const r of runs) {
+        const last = merged[merged.length - 1];
+        const sameStyle = last && last.bold === r.bold && last.italic === r.italic && Math.abs(last.size - r.size) < 0.6 && last.font === r.font;
+        if (sameStyle || (last && r.str === ' ')) last.str += r.str;
+        else merged.push({ ...r });
+    }
+    return merged.map(r => new docx.TextRun({
+        text: r.str,
+        bold: r.bold || undefined,
+        italics: r.italic || undefined,
+        size: Math.max(8, Math.round(r.size * 2)),   // medios puntos
+        font: r.font
+    }));
+}
+
+async function convertPdfToEditableDocx(file, onProgress) {
+    const [pdfjsLib, docx] = await Promise.all([loadLib('pdfjs'), loadLib('docx')]);
+    const buffer = await readFileAs(file, 'buffer');
+    const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buffer), isOffscreenCanvasSupported: false }).promise;
+
+    let MARGIN_PT = 36; // se ajusta al margen real del PDF en la primera página
+    const children = [];
+    let firstSize = null;
+    let scannedPages = 0;
+
+    for (let p = 1; p <= pdf.numPages; p++) {
+        onProgress && onProgress(p, pdf.numPages);
+        const page = await pdf.getPage(p);
+        const viewport = page.getViewport({ scale: 1 });
+        if (!firstSize) firstSize = { w: viewport.width, h: viewport.height };
+
+        const opList = await page.getOperatorList();          // también carga las fuentes
+        const paragraphs = await extractPageParagraphs(page, pdfjsLib, viewport);
+        let images = await extractPageImages(page, opList, pdfjsLib, viewport);
+        if (p === 1 && paragraphs.length) {
+            // Usar el margen izquierdo real del documento (entre 0,6 y 3 cm)
+            const minLeft = Math.min(...paragraphs.map(b => b.x), ...images.map(b => b.left));
+            MARGIN_PT = Math.max(18, Math.min(85, minLeft));
+        }
+        const usableW = viewport.width - MARGIN_PT * 2;
+        const pageChildren = [];
+
+        if (paragraphs.length === 0) {
+            // Página escaneada: no hay texto que extraer, se pone la página como imagen
+            scannedPages++;
+            const scale = 2;
+            const vp = page.getViewport({ scale });
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.round(vp.width); canvas.height = Math.round(vp.height);
+            const pctx = canvas.getContext('2d');
+            pctx.fillStyle = '#fff'; pctx.fillRect(0, 0, canvas.width, canvas.height);
+            await page.render({ canvasContext: pctx, viewport: vp }).promise;
+            images = [{ type: 'image', top: 0, bottom: viewport.height, left: MARGIN_PT, width: usableW, height: usableW * viewport.height / viewport.width, blob: await canvasToBlob(canvas, 'image/jpeg', 0.85) }];
+        }
+
+        const blocks = [...paragraphs, ...images].sort((a, b) => a.top - b.top);
+        let prevBottom = MARGIN_PT;
+        for (const block of blocks) {
+            const gapPt = Math.max(0, Math.min(block.top - prevBottom, 200));
+            const indentPt = Math.max(0, Math.min((block.left !== undefined ? block.left : block.x) - MARGIN_PT, usableW * 0.6));
+            if (block.type === 'image') {
+                let w = block.width, h = block.height;
+                if (w > usableW) { h = h * usableW / w; w = usableW; }
+                const centeredImg = Math.abs((block.left + block.width / 2) - viewport.width / 2) < viewport.width * 0.05;
+                pageChildren.push(new docx.Paragraph({
+                    alignment: centeredImg ? docx.AlignmentType.CENTER : undefined,
+                    indent: centeredImg ? undefined : { left: Math.round(indentPt * PT_TO_TWIP) },
+                    spacing: { before: Math.round(gapPt * PT_TO_TWIP * 0.8), after: 0 },
+                    children: [new docx.ImageRun({
+                        data: await block.blob.arrayBuffer(),
+                        transformation: { width: Math.round(w * PT_TO_PX), height: Math.round(h * PT_TO_PX) }
+                    })]
+                }));
+                prevBottom = block.bottom;
+            } else {
+                pageChildren.push(new docx.Paragraph({
+                    alignment: block.centered ? docx.AlignmentType.CENTER : undefined,
+                    indent: block.centered ? undefined : { left: Math.round(indentPt * PT_TO_TWIP) },
+                    spacing: { before: Math.round(Math.max(0, gapPt - block.size * 0.3) * PT_TO_TWIP * 0.8), after: 0, line: 276 },
+                    children: runsToTextRuns(docx, block.runs)
+                }));
+                prevBottom = block.bottom;
+            }
+        }
+
+        if (pageChildren.length === 0) pageChildren.push(new docx.Paragraph(''));
+        if (p > 1) {
+            // Cada página del PDF empieza en una página nueva del Word
+            const first = pageChildren[0];
+            pageChildren[0] = new docx.Paragraph({ pageBreakBefore: true, children: [] });
+            pageChildren.splice(1, 0, first);
+        }
+        children.push(...pageChildren);
+        page.cleanup();
+    }
+
+    const doc = new docx.Document({
+        creator: 'Difuminar',
+        styles: { default: { document: { run: { font: 'Calibri' } } } },
+        sections: [{
+            properties: {
+                page: {
+                    size: { width: Math.round(firstSize.w * PT_TO_TWIP), height: Math.round(firstSize.h * PT_TO_TWIP) },
+                    margin: { top: MARGIN_PT * PT_TO_TWIP, right: MARGIN_PT * PT_TO_TWIP, bottom: MARGIN_PT * PT_TO_TWIP, left: MARGIN_PT * PT_TO_TWIP }
+                }
+            },
+            children
+        }]
+    });
+    const blob = await docx.Packer.toBlob(doc);
+    await pdf.destroy();
+    return { blob, scannedPages, totalPages: pdf.numPages };
+}
+window.convertPdfToEditableDocx = convertPdfToEditableDocx;
+
 if (DOM.btnPdfToWord && DOM.pdfToWordInput) {
     DOM.btnPdfToWord.addEventListener('click', () => {
         DOM.pdfToWordInput.click();
@@ -2966,58 +3113,19 @@ if (DOM.btnPdfToWord && DOM.pdfToWordInput) {
         const processFile = async () => {
             cleanup();
             DOM.loadingOverlay.classList.remove('hidden');
-            DOM.loadingText.textContent = "Convirtiendo a Word...";
-            
+            DOM.loadingText.textContent = "Convirtiendo a Word editable...";
             try {
-                const [pdfjsLib, docx] = await Promise.all([loadLib('pdfjs'), loadLib('docx')]);
-                const { Document, Packer, Paragraph, ImageRun } = docx;
-                const buffer = await readFileAs(file, 'buffer');
-                const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise;
-                
-                // Ancho útil de un A4 con márgenes pequeños (en píxeles de Word)
-                const MAX_W = 680, MAX_H = 980;
-                const children = [];
-                
-                for (let i = 1; i <= pdf.numPages; i++) {
-                    DOM.loadingText.textContent = `Convirtiendo página ${i} de ${pdf.numPages}...`;
-                    const page = await pdf.getPage(i);
-                    const viewport = page.getViewport({ scale: 2 });
-                    const canvas = document.createElement('canvas');
-                    const pctx = canvas.getContext('2d');
-                    canvas.width = Math.round(viewport.width);
-                    canvas.height = Math.round(viewport.height);
-                    pctx.fillStyle = "#ffffff";
-                    pctx.fillRect(0, 0, canvas.width, canvas.height);
-                    await page.render({ canvasContext: pctx, viewport }).promise;
-                    
-                    const blob = await canvasToBlob(canvas, 'image/jpeg', 0.85);
-                    const data = await blob.arrayBuffer();
-                    const scale = Math.min(MAX_W / canvas.width, MAX_H / canvas.height);
-                    
-                    children.push(new Paragraph({
-                        pageBreakBefore: i > 1,
-                        children: [new ImageRun({
-                            data,
-                            transformation: {
-                                width: Math.round(canvas.width * scale),
-                                height: Math.round(canvas.height * scale)
-                            }
-                        })]
-                    }));
-                }
-                
-                const doc = new Document({
-                    sections: [{
-                        properties: {
-                            page: { margin: { top: 500, right: 500, bottom: 500, left: 500 } }
-                        },
-                        children
-                    }]
+                const result = await convertPdfToEditableDocx(file, (i, n) => {
+                    DOM.loadingText.textContent = `Convirtiendo página ${i} de ${n}...`;
                 });
-                
-                const blob = await Packer.toBlob(doc);
-                await deliverFile(blob, `${baseName(file.name)}.docx`);
-                
+                await deliverFile(result.blob, `${baseName(file.name)}.docx`);
+                if (result.scannedPages === result.totalPages) {
+                    showToast("El PDF es escaneado (sin texto): las páginas se han puesto como imagen");
+                } else if (result.scannedPages > 0) {
+                    showToast(`${result.scannedPages} página(s) escaneadas se han puesto como imagen`);
+                } else {
+                    showToast("Word creado: puedes cambiar el texto y las fotos");
+                }
             } catch (err) {
                 console.error(err);
                 showToast("Hubo un error al convertir el PDF.");

@@ -52,7 +52,7 @@ async function initAI() {
             faceLandmarker = await createWithFallback(vision.FaceLandmarker, fileset, {
                 baseOptions: { modelAssetPath: AI_PATHS.face },
                 runningMode: "IMAGE",
-                numFaces: 1
+                numFaces: 6
             });
             return true;
         })().catch(err => {
@@ -279,4 +279,147 @@ window.runMagicCarnet = async function() {
         loadingOverlay.classList.add('hidden');
         if (loadingText) loadingText.textContent = "Cargando...";
     }
+};
+
+// ---------------------------------------------------------------------
+// Máscara de piel para "Piel Perfecta"
+// Devuelve { mask: Float32Array (0..1 por píxel), faces: nº de caras } o null si la IA no carga.
+// ---------------------------------------------------------------------
+const SKIN_FACE_OVAL = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109];
+const SKIN_LEFT_EYE = [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246];
+const SKIN_RIGHT_EYE = [362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385, 384, 398];
+const SKIN_LEFT_BROW = [70, 63, 105, 66, 107, 55, 65, 52, 53, 46];
+const SKIN_RIGHT_BROW = [300, 293, 334, 296, 336, 285, 295, 282, 283, 276];
+const SKIN_LIPS = [61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 409, 270, 269, 267, 0, 37, 39, 40, 185];
+
+// ¿Parece piel por el color? (0..1) — funciona con pieles claras y oscuras
+function skinLikeness(r, g, b) {
+    const y = 0.299 * r + 0.587 * g + 0.114 * b;
+    const cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
+    const cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
+    if (y < 35 || y > 250) return 0;
+    const dCr = cr < 133 ? (133 - cr) / 8 : cr > 180 ? (cr - 180) / 8 : 0;
+    const dCb = cb < 75 ? (75 - cb) / 8 : cb > 130 ? (cb - 130) / 8 : 0;
+    return Math.max(0, 1 - Math.max(dCr, dCb));
+}
+window.skinLikeness = skinLikeness;
+
+window.detectSkinMask = async function(canvas) {
+    const ready = await initAI();
+    if (!ready || !faceLandmarker) return null;
+    const w = canvas.width, h = canvas.height;
+    const result = faceLandmarker.detect(canvas);
+    const faces = (result && result.faceLandmarks) || [];
+    if (!faces.length) return { mask: null, faces: 0 };
+
+    // 1. Zona de la cara (óvalo) sin ojos, cejas, boca ni orificios de la nariz
+    const faceCanvas = document.createElement('canvas');
+    faceCanvas.width = w; faceCanvas.height = h;
+    const fc = faceCanvas.getContext('2d');
+    const poly = (lm, idx) => {
+        fc.beginPath();
+        idx.forEach((k, i) => { const p = lm[k]; i ? fc.lineTo(p.x * w, p.y * h) : fc.moveTo(p.x * w, p.y * h); });
+        fc.closePath();
+    };
+    const boxes = [];
+    faces.forEach(lm => {
+        let minX = 1, maxX = 0, minY = 1, maxY = 0;
+        lm.forEach(p => { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y); });
+        const fw = (maxX - minX) * w, fh = (maxY - minY) * h;
+        boxes.push({ x: minX * w, y: minY * h, w: fw, h: fh });
+
+        fc.globalCompositeOperation = 'source-over';
+        fc.fillStyle = 'white';
+        poly(lm, SKIN_FACE_OVAL); fc.fill();
+        fc.globalCompositeOperation = 'destination-out';
+        fc.lineJoin = 'round';
+        fc.lineWidth = Math.max(3, fw * 0.035);   // un poco de margen alrededor de ojos y boca
+        [SKIN_LEFT_EYE, SKIN_RIGHT_EYE, SKIN_LEFT_BROW, SKIN_RIGHT_BROW, SKIN_LIPS].forEach(part => {
+            poly(lm, part); fc.fill(); fc.stroke();
+        });
+    });
+    fc.globalCompositeOperation = 'source-over';
+    const soft = document.createElement('canvas');
+    soft.width = w; soft.height = h;
+    const sc = soft.getContext('2d');
+    const avgFace = boxes.reduce((a, b) => a + b.w, 0) / boxes.length;
+    sc.filter = `blur(${Math.max(2, Math.round(avgFace / 40))}px)`;
+    sc.drawImage(faceCanvas, 0, 0);
+    const faceAlpha = sc.getImageData(0, 0, w, h).data;
+
+    // 2. Piel cercana a la cara (orejas y cuello): mismo tono que la cara y con bordes suaves
+    const px = canvas.getContext('2d').getImageData(0, 0, w, h).data;
+    const mask = new Float32Array(w * h);
+    for (let i = 0; i < w * h; i++) mask[i] = faceAlpha[i * 4 + 3] / 255;
+
+    const toYCC = (r, g, b) => [
+        0.299 * r + 0.587 * g + 0.114 * b,
+        128 - 0.168736 * r - 0.331264 * g + 0.5 * b,
+        128 + 0.5 * r - 0.418688 * g - 0.081312 * b
+    ];
+    boxes.forEach(bx => {
+        // Tono medio de la piel de esta cara
+        let sy = 0, scb = 0, scr = 0, n = 0;
+        const fx0 = Math.max(0, Math.floor(bx.x)), fx1 = Math.min(w, Math.ceil(bx.x + bx.w));
+        const fy0 = Math.max(0, Math.floor(bx.y)), fy1 = Math.min(h, Math.ceil(bx.y + bx.h));
+        for (let y = fy0; y < fy1; y += 2) for (let x = fx0; x < fx1; x += 2) {
+            const j = (y * w + x) * 4;
+            if (faceAlpha[j + 3] > 220) { const c = toYCC(px[j], px[j + 1], px[j + 2]); sy += c[0]; scb += c[1]; scr += c[2]; n++; }
+        }
+        if (!n) return;
+        const my = sy / n, mcb = scb / n, mcr = scr / n;
+
+        // Elipse que cubre orejas y cuello, con caída suave hacia fuera
+        const cx = bx.x + bx.w / 2, cy = bx.y + bx.h * 0.75;
+        const rx = bx.w * 0.85, ry = bx.h * 1.1;
+        const x0 = Math.max(0, Math.floor(cx - rx)), x1 = Math.min(w, Math.ceil(cx + rx));
+        const y0 = Math.max(0, Math.floor(bx.y)), y1 = Math.min(h, Math.ceil(cy + ry));
+        for (let y = y0; y < y1; y++) {
+            for (let x = x0; x < x1; x++) {
+                const i = y * w + x, j = i * 4;
+                if (faceAlpha[j + 3] > 0) continue;                       // la cara ya está hecha (y sus huecos se respetan)
+                if (x > bx.x && x < bx.x + bx.w && y < bx.y + bx.h * 0.8) continue;   // ojos/boca/pelo de la frente
+                const er = Math.hypot((x - cx) / rx, (y - cy) / ry);
+                if (er >= 1) continue;
+                const fall = Math.min(1, (1 - er) / 0.3);
+                const c = toYCC(px[j], px[j + 1], px[j + 2]);
+                const dist = Math.hypot(c[1] - mcb, c[2] - mcr);
+                const tone = Math.max(0, 1 - Math.max(0, dist - 5) / 9) * Math.max(0, 1 - Math.max(0, Math.abs(c[0] - my) - 35) / 40);
+                const v = tone * fall * 0.85;
+                if (v > mask[i]) mask[i] = v;
+            }
+        }
+    });
+    return { mask, faces: faces.length, faceSize: avgFace };
+};
+
+// ---------------------------------------------------------------------
+// Partes de la cara para "Dientes" y "Ojos"
+// Devuelve una lista de caras con sus polígonos en píxeles, o null si la IA no carga.
+// ---------------------------------------------------------------------
+const PART_MOUTH_INNER = [78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308, 324, 318, 402, 317, 14, 87, 178, 88, 95];
+
+window.detectFaceParts = async function(canvas) {
+    const ready = await initAI();
+    if (!ready || !faceLandmarker) return null;
+    const w = canvas.width, h = canvas.height;
+    const result = faceLandmarker.detect(canvas);
+    const faces = (result && result.faceLandmarks) || [];
+    const toPx = (lm, idx) => idx.map(k => ({ x: lm[k].x * w, y: lm[k].y * h }));
+    return faces.map(lm => {
+        const face = {
+            mouth: toPx(lm, PART_MOUTH_INNER),
+            leftEye: toPx(lm, SKIN_LEFT_EYE),
+            rightEye: toPx(lm, SKIN_RIGHT_EYE),
+            irises: []
+        };
+        if (lm.length >= 478) {
+            [[468, 469, 470, 471, 472], [473, 474, 475, 476, 477]].forEach(([c, ...ring]) => {
+                const cx = lm[c].x * w, cy = lm[c].y * h;
+                const r = ring.reduce((a, k) => a + Math.hypot(lm[k].x * w - cx, lm[k].y * h - cy), 0) / ring.length;
+                face.irises.push({ x: cx, y: cy, r });
+            });
+        }
+        return face;
+    });
 };

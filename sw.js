@@ -1,6 +1,6 @@
 // Service Worker de Difuminar: guarda la app para que funcione sin internet.
 // Cambia CACHE_NAME en cada versión nueva.
-const CACHE_NAME = 'difuminar-v12b';
+const CACHE_NAME = 'difuminar-v23';
 
 const ASSETS = [
     './',
@@ -11,6 +11,10 @@ const ASSETS = [
     './manifest.json',
     './logo1.jpg',
     './icon.png',
+    './icon-192.png',
+    './icon-maskable.png',
+    './apple-touch-icon.png',
+    './favicon.png',
     './vision_bundle.js',
     './vision_wasm_internal.js',
     './vision_wasm_internal.wasm',
@@ -31,6 +35,20 @@ const ASSETS = [
     './xlsx.full.min.js',
     './pdf.min.js',
     './pdf.worker.min.js',
+    './textstyles.js',
+    './textfonts.css',
+    './fredoka-latin-700-normal.woff2',
+    './anton-latin-400-normal.woff2',
+    './bebas-neue-latin-400-normal.woff2',
+    './pacifico-latin-400-normal.woff2',
+    './dancing-script-latin-700-normal.woff2',
+    './playfair-display-latin-400-normal.woff2',
+    './playfair-display-latin-400-italic.woff2',
+    './playfair-display-latin-700-normal.woff2',
+    './special-elite-latin-400-normal.woff2',
+    './permanent-marker-latin-400-normal.woff2',
+    './bangers-latin-400-normal.woff2',
+    './lobster-latin-400-normal.woff2',
     './docx.umd.js'
 ];
 
