@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="pastel-rosa">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#fff1f2">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Difuminar">
+    <link rel="apple-touch-icon" href="icon.png">
+    <title>Difuminar - IA Photo Editor</title>
+    <!-- Fuentes e iconos guardados dentro de la app (funcionan sin internet) -->
+    <link rel="stylesheet" href="fonts.css">
+    <link rel="stylesheet" href="fontawesome.min.css">
+    <link rel="stylesheet" href="solid.min.css">
+    <link rel="stylesheet" href="style.css?v=12">
+    <link rel="manifest" href="manifest.json">
+    <script src="exifr.full.umd.js" defer></script>
+</head>
+<body>
+    <!-- SVG Filter for Sharpening -->
+    <svg width="0" height="0" style="position:absolute;z-index:-1;">
+        <filter id="sharpen-filter">
+            <feConvolveMatrix id="sharpen-matrix" order="3 3" preserveAlpha="true" kernelMatrix="0 0 0 0 1 0 0 0 0" />
+        </filter>
+    </svg>
+
+    <!-- Splash Screen -->
+    <div id="splash-screen">
+        <div class="splash-content">
+            <img src="logo1.jpg?v=4" alt="Logo" class="splash-logo" onerror="this.style.display='none'">
+            <h1 class="splash-title">Difuminar</h1>
+            <p class="splash-subtitle">IA Photo Editor</p>
+            <div class="splash-version">Versión V12</div>
+            <p class="splash-hint">Toca la pantalla para empezar</p>
+        </div>
+    </div>
+
+    <div class="app-container">
+        <!-- Top Header -->
+        <header class="app-header">
+            <div class="logo">
+                <h1>Difuminar <span style="font-size: 0.6em; color: var(--text-muted); font-weight: 500;">V12</span></h1>
+            </div>
+            
+            <div class="history-actions" id="history-actions">
+                <button class="history-btn" disabled id="btn-info" title="Información"><i class="fas fa-info-circle"></i></button>
+                <button class="history-btn" disabled id="btn-compare" title="Ver Original"><i class="fas fa-eye"></i></button>
+                <button class="history-btn" disabled id="btn-undo" title="Deshacer"><i class="fas fa-undo"></i></button>
+                <button class="history-btn" disabled id="btn-redo" title="Rehacer"><i class="fas fa-redo"></i></button>
+                <button class="history-btn" disabled id="btn-reset-img" title="Restablecer Foto"><i class="fas fa-trash-restore"></i></button>
+            </div>
+
+            <div class="theme-select-wrapper">
+                <select id="theme-selector" class="theme-select">
+                    <option value="pastel-rosa">Pastel: Rosa</option>
+                    <option value="pastel-amarillo">Pastel: Amarillo</option>
+                    <option value="pastel-verde">Pastel: Verde</option>
+                    <option value="pastel-azul">Pastel: Azul</option>
+                    <option value="pastel-marron">Pastel: Marrón</option>
+                    <option value="pastel-gris">Pastel: Gris</option>
+                    <option value="pastel-naranja">Pastel: Naranja</option>
+                    <option value="pastel-pistacho">Pastel: Pistacho</option>
+                    <option value="pastel-blanco">Pastel: Blanco</option>
+                </select>
+                <i class="fas fa-chevron-down"></i>
+            </div>
+        </header>
+
+        <!-- Main Workspace (Canvas) -->
+        <main class="workspace">
+            <div id="canvas-container" class="canvas-container">
+                <div id="placeholder-text" class="placeholder-text">
+                    <i class="fas fa-images"></i>
+                    <p>Sube una foto para empezar</p>
+                    <label for="image-upload" class="upload-btn primary-btn">
+                        <i class="fas fa-upload"></i> Subir Foto
+                    </label>
+                    <input type="file" id="image-upload" accept="image/*" class="hidden">
+                </div>
+                
+                <canvas id="original-canvas" class="hidden"></canvas>
+                <canvas id="main-canvas"></canvas>
+                <canvas id="mask-canvas"></canvas>
+                <div id="tool-cursor" class="hidden"></div>
+                
+                <div id="crop-overlay" class="hidden">
+                    <div id="crop-box">
+                        <div class="crop-handle top-left"></div>
+                        <div class="crop-handle top-right"></div>
+                        <div class="crop-handle bottom-left"></div>
+                        <div class="crop-handle bottom-right"></div>
+                    </div>
+                </div>
+                
+                <div id="text-overlay-element" class="hidden" style="position: absolute; cursor: move; user-select: none; z-index: 10; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+                    <div id="text-overlay-content" style="white-space: pre-wrap; text-align: center; line-height: 1.2;">Texto de ejemplo</div>
+                </div>
+            </div>
+            
+        </main>
+
+        <!-- Bottom Controls Area -->
+        <div class="bottom-controls">
+            <!-- Tool Panels (Bottom Sheets) -->
+            <section class="tool-panels closed">
+                <!-- TAB: AJUSTES -->
+                        <div id="panel-ajustes" class="panel-content">
+                <div id="adjustments-sliders-container">
+                    <div class="control-item" id="control-brightness">
+                        <div class="label-row"><span><i class="fas fa-sun"></i> Brillo</span><span class="value-display" id="val-brightness">0</span></div>
+                        <input type="range" id="adj-brightness" min="-100" max="100" value="0">
+                    </div>
+                    <div class="control-item hidden" id="control-contrast">
+                        <div class="label-row"><span><i class="fas fa-adjust"></i> Contraste</span><span class="value-display" id="val-contrast">0</span></div>
+                        <input type="range" id="adj-contrast" min="-100" max="100" value="0">
+                    </div>
+                    <div class="control-item hidden" id="control-temperature">
+                        <div class="label-row"><span><i class="fas fa-thermometer-half"></i> Temperatura</span><span class="value-display" id="val-temperature">0</span></div>
+                        <input type="range" id="adj-temperature" min="-50" max="50" value="0">
+                    </div>
+                    <div class="control-item hidden" id="control-blackpoint">
+                        <div class="label-row"><span><i class="fas fa-moon"></i> Punto Negro</span><span class="value-display" id="val-blackpoint">0</span></div>
+                        <input type="range" id="adj-blackpoint" min="-50" max="50" value="0">
+                    </div>
+                    <div class="control-item hidden" id="control-whites">
+                        <div class="label-row"><span><i class="fas fa-sun"></i> Blancos</span><span class="value-display" id="val-whites">0</span></div>
+                        <input type="range" id="adj-whites" min="-50" max="50" value="0">
+                    </div>
+                    <div class="control-item hidden" id="control-clarity">
+                        <div class="label-row"><span><i class="fas fa-gem"></i> Claridad</span><span class="value-display" id="val-clarity">0</span></div>
+                        <input type="range" id="adj-clarity" min="-50" max="50" value="0">
+                    </div>
+                    <div class="control-item hidden" id="control-haze">
+                        <div class="label-row"><span><i class="fas fa-cloud"></i> Neblina</span><span class="value-display" id="val-haze">0</span></div>
+                        <input type="range" id="adj-haze" min="-50" max="50" value="0">
+                    </div>
+                </div>
+
+                <div id="adjustments-toolbar" class="horizontal-scroll-toolbar">
+                    <button class="adj-btn active" data-target="control-brightness"><i class="fas fa-sun"></i><span>Brillo</span></button>
+                    <button class="adj-btn" data-target="control-contrast"><i class="fas fa-adjust"></i><span>Contraste</span></button>
+                    <button class="adj-btn" data-target="control-temperature"><i class="fas fa-thermometer-half"></i><span>Temp</span></button>
+                    <button class="adj-btn" data-target="control-blackpoint"><i class="fas fa-moon"></i><span>Punto Negro</span></button>
+                    <button class="adj-btn" data-target="control-whites"><i class="fas fa-sun"></i><span>Blancos</span></button>
+                    <button class="adj-btn" data-target="control-clarity"><i class="fas fa-gem"></i><span>Claridad</span></button>
+                    <button class="adj-btn" data-target="control-haze"><i class="fas fa-cloud"></i><span>Neblina</span></button>
+                </div>
+            </div>
+
+            <!-- TAB: HERRAMIENTAS -->
+            <div id="panel-herramientas" class="panel-content">
+                <div id="tools-toolbar" class="horizontal-scroll-toolbar">
+                    <button id="tool-magic" class="tool-icon-btn"><i class="fas fa-magic"></i><span>Carnet Mágico</span></button>
+                    <button id="tool-magic-skin" class="tool-icon-btn"><i class="fas fa-smile"></i><span>Piel Perfecta</span></button>
+                    <button id="tool-magic-teeth" class="tool-icon-btn"><i class="fas fa-tooth"></i><span>Dientes</span></button>
+                    <button id="tool-magic-eyes" class="tool-icon-btn"><i class="fas fa-eye"></i><span>Ojos</span></button>
+                    <button id="tool-text" class="tool-icon-btn"><i class="fas fa-font"></i><span>Texto</span></button>
+                    <button id="tool-history" class="tool-icon-btn"><i class="fas fa-list-ul"></i><span>Historial</span></button>
+                    <button id="tool-clone" class="tool-icon-btn"><i class="fas fa-eraser"></i><span>Borrar Objetos</span></button>
+                    <button id="tool-manual-blur" class="tool-icon-btn"><i class="fas fa-tint"></i><span>Difuminar Manual</span></button>
+                    <button id="tool-crop" class="tool-icon-btn"><i class="fas fa-crop-alt"></i><span>Recortar</span></button>
+                    <button id="tool-compress" class="tool-icon-btn"><i class="fas fa-compress-arrows-alt"></i><span>Reducir Peso</span></button>
+                    <button id="tool-png" class="tool-icon-btn"><i class="fas fa-file-image"></i><span>A PNG</span></button>
+                    <button id="tool-pdf" class="tool-icon-btn"><i class="fas fa-file-pdf"></i><span>Fotos a PDF</span></button>
+                    <button id="tool-pdf-docs" class="tool-icon-btn"><i class="fas fa-file-pdf"></i><span>Docs a PDF</span></button>
+                    <button id="tool-pdf-to-word" class="tool-icon-btn"><i class="fas fa-file-word"></i><span>PDF a Word/Pages</span></button>
+                </div>
+                <div id="magic-tools-settings" class="sub-panel hidden">
+                    <div style="display: flex; gap: 10px; margin-bottom: 5px; align-items: center;">
+                        <i id="magic-active-icon" class="fas fa-magic" style="color: var(--accent-color);"></i>
+                        <span id="magic-active-title" style="font-weight: 600; font-size: 0.95rem; flex: 1;">Efecto</span>
+                        <span id="val-magic-intensity" style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted);">0</span>
+                    </div>
+                    <input type="range" id="adj-magic-intensity" min="0" max="100" value="0" style="margin-bottom: 10px;">
+                    
+                    <div id="magic-brush-settings" class="hidden" style="margin-bottom: 10px; background: rgba(0,0,0,0.02); border-radius: 8px; padding: 8px;">
+                        <p style="font-size: 0.85rem; color: var(--accent-color); margin-bottom: 5px; font-weight:600;"><i class="fas fa-paint-brush"></i> 1. Pinta sobre la zona</p>
+                        <div class="label-row" style="margin-bottom: 2px;">
+                            <span>Tamaño Pincel</span>
+                            <span class="value-display" id="val-magic-brush">20px</span>
+                        </div>
+                        <input type="range" id="s-magic-brush" min="5" max="100" value="20" style="margin-bottom: 5px;">
+                        <button id="btn-magic-clear" class="btn" style="width: 100%; font-size: 0.75rem; padding: 6px;"><i class="fas fa-eraser"></i> Borrar dibujo</button>
+                    </div>
+                    
+                    <div style="display: flex; gap: 8px;">
+                        <button id="btn-cancel-magic" class="btn cancel" style="flex: 1; padding: 10px;"><i class="fas fa-times"></i> Cancelar</button>
+                        <button id="btn-apply-magic" class="btn primary-btn" style="flex: 1; padding: 10px; background: var(--accent-color);"><i class="fas fa-check"></i> Aceptar</button>
+                    </div>
+                </div>
+
+                <div id="brush-settings" class="sub-panel hidden">
+                    <div id="eraser-settings" style="margin-bottom: 15px;">
+                        <button id="btn-set-clone-source" class="btn hidden" style="width: 100%; font-size: 0.85rem; padding: 10px; margin-bottom: 8px;"><i class="fas fa-crosshairs"></i> Fijar Origen de Borrado</button>
+                        <button id="btn-apply-eraser" class="btn primary-btn hidden" style="width: 100%; font-size: 0.85rem; padding: 10px; margin-bottom: 8px; background: var(--accent-color);"><i class="fas fa-magic"></i> Aplicar Borrado</button>
+                        <button id="btn-apply-blur" class="btn primary-btn hidden" style="width: 100%; font-size: 0.85rem; padding: 10px; margin-bottom: 8px; background: var(--accent-color);"><i class="fas fa-tint"></i> Aplicar Difuminado</button>
+                        <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                            <button id="btn-clear-eraser" class="btn" style="flex: 1; font-size: 0.85rem; padding: 10px;"><i class="fas fa-times"></i> Descartar</button>
+                            <button id="btn-cancel-brush" class="btn" style="flex: 1; font-size: 0.85rem; padding: 10px;">Volver</button>
+                        </div>
+                    </div>
+                    <div class="label-row"><span>Tamaño Pincel</span><span class="value-display" id="val-brush-size">20px</span></div>
+                    <input type="range" id="brush-size" min="5" max="100" value="20">
+                </div>
+                
+                <!-- Text Settings Sub-Panel -->
+                <div id="text-settings" class="sub-panel hidden">
+                    <textarea id="text-input" placeholder="Escribe aquí... (Usa Intro para varias líneas)" rows="2" style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-main); color: var(--text-main); margin-bottom: 8px; font-size: 0.95rem; resize: none;"></textarea>
+                    
+                    <div style="display: flex; gap: 10px; margin-bottom: 8px; overflow-x: auto; padding-bottom: 5px; align-items: center;" class="horizontal-scroll-toolbar">
+                        <!-- 0: Basico -->
+                        <button class="btn preset-text-btn active" data-style="basico" style="padding: 5px; min-width: 60px; height: 60px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.1); border-radius: 8px;">
+                            <span style="font-family: Arial; font-weight: bold; font-size: 14px;">Básico</span>
+                        </button>
+                        
+                        <!-- 1: Bloque (Daniel Fernandez) -->
+                        <button class="btn preset-text-btn" data-style="bloque" style="padding: 5px; min-width: 60px; height: 60px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.1); border-radius: 8px; line-height: 0.85;">
+                            <span style="font-family: Impact, Arial Black; font-size: 14px; text-transform: uppercase;">DANIEL</span>
+                            <span style="font-family: Impact, Arial Black; font-size: 14px; text-transform: uppercase;">FERNANDEZ</span>
+                            <span style="font-family: Impact, Arial Black; font-size: 14px; text-transform: uppercase;">PINCOYA</span>
+                        </button>
+
+                        <!-- 2: Cursiva (die with memories) -->
+                        <button class="btn preset-text-btn" data-style="cursiva" style="padding: 5px; min-width: 60px; height: 60px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.1); border-radius: 8px;">
+                            <span style="font-family: 'Brush Script MT', cursive; font-size: 13px; text-align: center; line-height: 1;">die with<br>memories,<br>not dreams.</span>
+                        </button>
+
+                        <!-- 3: Acción (Let's see some action) -->
+                        <button class="btn preset-text-btn" data-style="accion" style="padding: 5px; min-width: 60px; height: 60px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.1); border-radius: 8px; transform: skewX(-10deg);">
+                            <div style="border-top: 2px solid currentColor; border-bottom: 2px solid currentColor; padding: 2px 0;">
+                                <span style="font-family: Impact, Arial Black; font-size: 10px; font-style: italic; line-height: 1; display: block; text-align: center;">LET'S SEE<br>SOME ACTION</span>
+                            </div>
+                        </button>
+
+                        <!-- 4: Poster Complejo (Spend time with...) -->
+                        <button class="btn preset-text-btn" data-style="poster" style="padding: 5px; min-width: 60px; height: 75px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.1); border-radius: 8px; line-height: 1;">
+                            <div style="border: 2px solid currentColor; width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; padding: 2px; box-sizing: border-box;">
+                                <i class="fas fa-star" style="font-size: 8px; margin-bottom: 2px;"></i>
+                                <span style="font-family: Arial; font-weight: bold; font-size: 8px; letter-spacing: 2px;">SPEND</span>
+                                <span style="font-family: Impact; font-size: 9px; margin-top: 1px;">TIME WITH</span>
+                                <div style="display: flex; align-items: center; gap: 2px; margin: 2px 0;">
+                                    <div style="width: 6px; height: 1px; background: currentColor;"></div>
+                                    <span style="font-family: 'Georgia', serif; font-style: italic; font-size: 7px;">the people</span>
+                                    <div style="width: 6px; height: 1px; background: currentColor;"></div>
+                                </div>
+                                <span style="background: currentColor; color: var(--bg-main); font-family: Arial; font-weight: bold; font-size: 6px; padding: 1px 4px;">WHO MAKES</span>
+                                <span style="font-family: 'Brush Script MT', cursive; font-size: 11px; margin-top: 1px;">you happy.</span>
+                            </div>
+                        </button>
+                        
+                        <!-- 5: Neón -->
+                        <button class="btn preset-text-btn" data-style="neon" style="padding: 5px; min-width: 60px; height: 75px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #111; border: 1px solid rgba(0,0,0,0.1); border-radius: 8px;">
+                            <span style="font-family: 'Courier New', monospace; font-size: 14px; font-weight: bold; color: #fff; text-shadow: 0 0 5px #f0f, 0 0 10px #f0f, 0 0 20px #f0f;">NEON</span>
+                        </button>
+
+                        <!-- 6: Pegatina (Burbuja) -->
+                        <button class="btn preset-text-btn" data-style="burbuja" style="padding: 5px; min-width: 60px; height: 75px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.1); border-radius: 8px;">
+                            <span style="font-family: Arial, sans-serif; font-size: 15px; font-weight: 900; -webkit-text-stroke: 2px white; color: black; filter: drop-shadow(0 2px 2px rgba(0,0,0,0.2));">Sticker</span>
+                        </button>
+
+                        <!-- 7: Sombra 3D -->
+                        <button class="btn preset-text-btn" data-style="sombra3d" style="padding: 5px; min-width: 60px; height: 75px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.1); border-radius: 8px;">
+                            <span style="font-family: Impact, sans-serif; font-size: 16px; text-transform: uppercase; color: white; text-shadow: 2px 2px 0px black;">SHADOW</span>
+                        </button>
+
+                        <!-- 8: Elegante -->
+                        <button class="btn preset-text-btn" data-style="elegante" style="padding: 5px; min-width: 60px; height: 75px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.1); border-radius: 8px;">
+                            <div style="border-top: 1px solid currentColor; border-bottom: 1px solid currentColor; padding: 2px 0;">
+                                <span style="font-family: 'Georgia', serif; font-size: 10px; letter-spacing: 3px; text-transform: uppercase;">Elegance</span>
+                            </div>
+                        </button>
+
+                        <!-- 9: Cita -->
+                        <button class="btn preset-text-btn" data-style="cita" style="padding: 5px; min-width: 60px; height: 75px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.1); border-radius: 8px; position: relative;">
+                            <span style="font-family: 'Georgia', serif; font-size: 30px; position: absolute; top: 0; left: 5px; opacity: 0.3;">"</span>
+                            <span style="font-family: 'Georgia', serif; font-style: italic; font-size: 11px;">Quote<br>Me</span>
+                            <span style="font-family: 'Georgia', serif; font-size: 30px; position: absolute; bottom: -15px; right: 5px; opacity: 0.3;">"</span>
+                        </button>
+
+                        <!-- 10: Minimalista -->
+                        <button class="btn preset-text-btn" data-style="minimalista" style="padding: 5px; min-width: 60px; height: 75px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.1); border-radius: 8px;">
+                            <div style="border: 1px solid currentColor; padding: 4px; display: flex; justify-content: center; align-items: center;">
+                                <span style="font-family: Arial, sans-serif; font-size: 8px; letter-spacing: 2px; text-transform: uppercase;">MINIMAL</span>
+                            </div>
+                        </button>
+
+                        <!-- 11: Sello -->
+                        <button class="btn preset-text-btn" data-style="sello" style="padding: 5px; min-width: 60px; height: 75px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.1); border-radius: 8px;">
+                            <div style="border: 2px double currentColor; border-radius: 50%; width: 45px; height: 45px; display: flex; justify-content: center; align-items: center; text-align: center;">
+                                <span style="font-family: 'Times New Roman', serif; font-size: 9px; font-weight: bold; text-transform: uppercase;">Sello<br>Oficial</span>
+                            </div>
+                        </button>
+
+                        <!-- 12: Firma -->
+                        <button class="btn preset-text-btn" data-style="firma" style="padding: 5px; min-width: 60px; height: 75px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.1); border-radius: 8px;">
+                            <span style="font-family: 'Brush Script MT', cursive; font-size: 16px;">Signature</span>
+                            <div style="width: 40px; height: 2px; background: currentColor; margin-top: -2px; border-radius: 50%; transform: rotate(-5deg);"></div>
+                        </button>
+
+                        <!-- 13: Cinta -->
+                        <button class="btn preset-text-btn" data-style="cinta" style="padding: 5px; min-width: 60px; height: 75px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.1); border-radius: 8px;">
+                            <div style="background: currentColor; padding: 2px 8px; position: relative;">
+                                <span style="font-family: Arial, sans-serif; font-weight: bold; font-size: 10px; color: var(--bg-main); text-transform: uppercase;">TAPE</span>
+                            </div>
+                        </button>
+
+                        <!-- 14: Retro -->
+                        <button class="btn preset-text-btn" data-style="retro" style="padding: 5px; min-width: 60px; height: 75px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.1); border-radius: 8px; transform: rotate(-10deg);">
+                            <span style="font-family: Impact, sans-serif; font-size: 16px; font-style: italic; color: transparent; -webkit-text-stroke: 1px var(--text-main); text-shadow: 2px 2px 0px var(--text-main);">RETRO</span>
+                        </button>
+
+                        <!-- 15: Vertical -->
+                        <button class="btn preset-text-btn" data-style="vertical" style="padding: 5px; min-width: 60px; height: 75px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.1); border-radius: 8px;">
+                            <span style="font-family: Arial, sans-serif; font-weight: bold; font-size: 10px; line-height: 1;">V<br>E<br>R<br>T</span>
+                        </button>
+
+                        <!-- 16: Romantico -->
+                        <button class="btn preset-text-btn" data-style="romantico" style="padding: 5px; min-width: 60px; height: 75px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.1); border-radius: 8px;">
+                            <span style="font-family: 'Georgia', serif; font-style: italic; font-size: 12px; display: flex; align-items: center; gap: 3px;">~ <span>Amor</span> ~</span>
+                        </button>
+                    </div>
+
+                    <div style="display: flex; gap: 10px; margin-bottom: 8px;">
+                        <select id="text-font" style="flex: 2; padding: 6px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-main); color: var(--text-main); font-size: 0.85rem;">
+                            <option value="Arial, sans-serif">Moderna (Arial)</option>
+                            <option value="'Georgia', serif">Clásica (Georgia)</option>
+                            <option value="'Courier New', monospace">Máquina Escribir</option>
+                            <option value="'Brush Script MT', cursive">Cursiva</option>
+                            <option value="Impact, sans-serif">Impactante</option>
+                        </select>
+                        <input type="color" id="text-color" value="#ffffff" style="flex: 1; height: 32px; border-radius: 8px; border: 1px solid var(--border-color); box-shadow: inset 0 0 0 1px rgba(0,0,0,0.12); cursor: pointer; padding: 2px; background: var(--bg-main, #fff);">
+                    </div>
+                    
+                    <div style="display: flex; gap: 15px; margin-bottom: 8px;">
+                        <div style="flex: 1;">
+                            <div class="label-row" style="margin-bottom: 2px;"><span><i class="fas fa-text-height"></i> Tamaño</span><span class="value-display" id="val-text-size">40px</span></div>
+                            <input type="range" id="text-size" min="10" max="200" value="40" style="margin:0;">
+                        </div>
+                        <div style="flex: 1;">
+                            <div class="label-row" style="margin-bottom: 2px;"><span><i class="fas fa-eye"></i> Opacidad</span><span class="value-display" id="val-text-opacity">100%</span></div>
+                            <input type="range" id="text-opacity" min="5" max="100" value="100" style="margin:0;">
+                        </div>
+                    </div>
+                    
+                    <div style="display: flex; gap: 8px;">
+                        <button id="btn-cancel-text" class="btn cancel" style="flex: 1; font-size: 0.85rem; padding: 8px;"><i class="fas fa-times"></i> Cancelar</button>
+                        <button id="btn-apply-text" class="btn primary-btn" style="flex: 1; font-size: 0.85rem; padding: 8px; background: var(--accent-color);"><i class="fas fa-check"></i> Fijar</button>
+                    </div>
+                </div>
+                
+                <div id="crop-settings" class="sub-panel hidden">
+                    <p style="font-size:0.85rem; margin-bottom:10px; color:var(--text-main); text-align:center;">Proporción de Recorte</p>
+                    <div style="display:flex; justify-content:center; gap:6px; margin-bottom:15px; flex-wrap:wrap;">
+                        <button class="history-btn crop-ratio-btn active" data-ratio="free" style="width:auto; padding:5px 8px; font-size:0.8rem;">Libre</button>
+                        <button class="history-btn crop-ratio-btn" data-ratio="1" style="width:auto; padding:5px 8px; font-size:0.8rem;">1:1</button>
+                        <button class="history-btn crop-ratio-btn" data-ratio="1.333" style="width:auto; padding:5px 8px; font-size:0.8rem;">4:3 (H)</button>
+                        <button class="history-btn crop-ratio-btn" data-ratio="0.75" style="width:auto; padding:5px 8px; font-size:0.8rem;">3:4 (V)</button>
+                        <button class="history-btn crop-ratio-btn" data-ratio="1.777" style="width:auto; padding:5px 8px; font-size:0.8rem;">16:9 (H)</button>
+                        <button class="history-btn crop-ratio-btn" data-ratio="0.5625" style="width:auto; padding:5px 8px; font-size:0.8rem;">9:16 (V)</button>
+                    </div>
+                    <div class="crop-actions">
+                        <button id="btn-cancel-crop" class="btn">Cancelar</button>
+                        <button id="btn-apply-crop" class="primary-btn">Aplicar</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB: EXPORTAR -->
+            <div id="panel-exportar" class="panel-content">
+                <div class="export-options">
+                    <div class="control-item">
+                        <div class="label-row"><span>Formato</span></div>
+                        <select id="export-format" class="custom-select">
+                            <option value="image/png">PNG (Sin pérdida, más peso)</option>
+                            <option value="image/jpeg">JPEG (Comprimido)</option>
+                            <option value="image/webp">WebP (Moderno)</option>
+                        </select>
+                    </div>
+                    <div class="control-item hidden" id="export-quality-container">
+                        <div class="label-row"><span>Calidad</span><span class="value-display" id="val-export-quality">90%</span></div>
+                        <input type="range" id="export-quality" min="10" max="100" value="90">
+                    </div>
+                </div>
+                
+                <div class="action-grid">
+                    <button id="btn-copy" class="btn"><i class="fas fa-copy"></i> Copiar</button>
+                    <button id="btn-save" class="primary-btn"><i class="fas fa-save"></i> Guardar</button>
+                </div>
+                <button id="btn-exit" class="exit-btn"><img src="logo1.jpg" class="custom-icon" alt="" onerror="this.style.display='none'"> Salir y Borrar</button>
+            </div>
+        </section>
+
+        <!-- Bottom Navigation Bar -->
+        <nav class="bottom-nav">
+            <button class="nav-item" data-target="panel-ajustes">
+                <i class="fas fa-sliders-h"></i>
+                <span>Ajustes</span>
+            </button>
+            <button class="nav-item" data-target="panel-herramientas">
+                <i class="fas fa-tools"></i>
+                <span>Herramientas</span>
+            </button>
+            <button class="nav-item" data-target="panel-exportar">
+                <i class="fas fa-share-square"></i>
+                <span>Exportar</span>
+            </button>
+        </nav>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="hidden">
+        <div class="spinner"></div>
+        <p id="loading-text" style="color: white; font-weight: 500;">Cargando...</p>
+    </div>
+
+    <script>
+        if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+            // Solo recargamos si ya había una versión anterior funcionando (no en la primera visita)
+            const hadController = !!navigator.serviceWorker.controller;
+            let refreshing = false;
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                if (hadController && !refreshing) {
+                    refreshing = true;
+                    window.location.reload();
+                }
+            });
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js').catch(err => console.log('SW fallo: ', err));
+            });
+        }
+    </script>
+    <!-- Custom Modal para Restablecer -->
+    <div id="reset-modal" class="custom-modal-overlay">
+        <div class="custom-modal">
+            <h3>Restablecer Foto</h3>
+            <p>¿Estás seguro de que quieres borrar todos los cambios y volver a la foto original?</p>
+            <div class="modal-actions">
+                <button id="modal-btn-confirm" class="modal-btn danger">Sí, borrar todo</button>
+                <button id="modal-btn-cancel" class="modal-btn cancel">Cancelar</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal genérico para confirmaciones -->
+    <div id="confirm-modal" class="custom-modal-overlay">
+        <div class="custom-modal">
+            <div style="display: flex; align-items: center; justify-content: center; gap: 15px; margin-bottom: 10px;">
+                <img src="logo1.jpg" style="width: 50px; height: 50px; border-radius: 10px; object-fit: cover; opacity: 0.85; box-shadow: 0 2px 10px rgba(0,0,0,0.4);" onerror="this.style.display='none'">
+                <h3 id="confirm-modal-title" style="margin-bottom: 0;">¿Estás seguro?</h3>
+            </div>
+            <p id="confirm-modal-text">Esta acción no se puede deshacer.</p>
+            <div class="modal-actions">
+                <button id="confirm-modal-no" class="modal-btn cancel">No</button>
+                <button id="confirm-modal-yes" class="modal-btn confirm">Sí</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal para escoger DOCX o PAGES -->
+    <div id="format-modal" class="custom-modal-overlay">
+        <div class="custom-modal">
+            <div style="display: flex; align-items: center; justify-content: center; gap: 15px; margin-bottom: 10px;">
+                <img src="logo1.jpg" style="width: 50px; height: 50px; border-radius: 10px; object-fit: cover; opacity: 0.85; box-shadow: 0 2px 10px rgba(0,0,0,0.4);" onerror="this.style.display='none'">
+                <h3 style="margin-bottom: 0;">¿A qué formato?</h3>
+            </div>
+            <p style="text-align: center; margin-bottom: 25px; font-size: 0.9rem; color: var(--text-muted);">El formato <b>.docx</b> es el estándar universal y se abrirá automáticamente de forma perfecta tanto en <b>Microsoft Word</b> como en <b>Apple Pages</b>.</p>
+            <div class="modal-actions" style="display: flex; gap: 10px; margin-bottom: 10px;">
+                <button id="format-modal-docx" class="modal-btn confirm" style="flex:1;"><i class="fas fa-file-word"></i> Descargar Documento (.docx)</button>
+            </div>
+            <button id="format-modal-cancel" class="modal-btn cancel" style="width: 100%; margin-top: 10px;">Cancelar</button>
+        </div>
+    </div>
+    
+    <!-- Input oculto para subir varias fotos (PDF) -->
+    <input type="file" id="pdf-file-input" multiple accept="image/*,.heic" style="display: none;">
+    <!-- Input oculto para subir documentos (PDF) -->
+    <input type="file" id="pdf-docs-input" accept=".txt,.csv,.xls,.xlsx" style="display: none;">
+    <!-- Input oculto para subir PDF para convertir a Word -->
+    <input type="file" id="pdf-to-word-input" accept=".pdf" style="display: none;">
+
+
+    <!-- Info Modal -->
+    <div id="info-modal" class="custom-modal-overlay">
+        <div class="custom-modal" style="text-align: left; max-width: 90%; width: 350px;">
+            <h3 style="display: flex; align-items: center; gap: 15px;">
+                <img src="logo1.jpg" style="width: 100px; height: 100px; border-radius: 15px; object-fit: cover; opacity: 0.85; box-shadow: 0 4px 15px rgba(0,0,0,0.3);" onerror="this.style.display='none'">
+                Información
+            </h3>
+            <div id="info-details" style="font-size: 0.9rem; color: var(--text-muted); line-height: 1.6; margin-bottom: 25px;">
+            </div>
+            <div class="modal-actions">
+                <button id="btn-close-info" class="modal-btn cancel" style="width: 100%;">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Compress Confirm Modal -->
+    <div id="compress-confirm-modal" class="custom-modal-overlay">
+        <div class="custom-modal">
+            <h3 style="display: flex; align-items: center; justify-content: center; gap: 15px;">
+                <img src="logo1.jpg" style="width: 100px; height: 100px; border-radius: 15px; object-fit: cover; opacity: 0.85; box-shadow: 0 4px 15px rgba(0,0,0,0.3);" onerror="this.style.display='none'">
+                Reducir Peso
+            </h3>
+            <p style="text-align: left; margin-bottom: 25px;">
+                Se va a reducir el tamaño (peso) del archivo un <strong>20%</strong>. La foto se escalará ligeramente para ocupar menos espacio.<br><br>¿Quieres continuar?
+            </p>
+            <div class="modal-actions" style="flex-direction: row; gap: 10px;">
+                <button id="btn-cancel-compress" class="modal-btn cancel" style="flex: 1;">Cancelar</button>
+                <button id="btn-confirm-compress" class="modal-btn primary" style="flex: 1;">Reducir 20%</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Compress Success Modal -->
+    <div id="compress-success-modal" class="custom-modal-overlay">
+        <div class="custom-modal">
+            <h3 style="display: flex; align-items: center; justify-content: center; gap: 10px; color: #4CAF50;">
+                <i class="fas fa-check-circle"></i> ¡Listo!
+            </h3>
+            <p>
+                La foto se ha comprimido exitosamente.<br><br>
+                Nuevo tamaño: <strong id="new-compress-size" style="color: var(--text-main); font-size: 1.1em;"></strong>
+            </p>
+            <div class="modal-actions">
+                <button id="btn-close-compress" class="modal-btn cancel" style="width: 100%;">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- History Modal -->
+    <div id="history-modal" class="custom-modal-overlay">
+        <div class="custom-modal" style="max-height: 80vh; display: flex; flex-direction: column;">
+            <h3 style="display: flex; align-items: center; justify-content: center; gap: 10px;">
+                <i class="fas fa-history"></i> Historial de Edición
+            </h3>
+            <div id="history-list" style="overflow-y: auto; text-align: left; margin: 15px 0; flex: 1; display: flex; flex-direction: column; gap: 8px;">
+                <!-- Items injected via JS -->
+            </div>
+            <div class="modal-actions">
+                <button id="btn-close-history" class="modal-btn cancel" style="width: 100%;">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Las librerías de PDF / Word / Excel están en esta misma carpeta y se cargan solo cuando hacen falta (ver loadLib en app.js) -->
+    <script src="ai.js?v=12"></script>
+    <script src="app.js?v=12"></script>
+</body>
+</html>
