@@ -312,85 +312,110 @@ window.detectSkinMask = async function(canvas) {
     const faces = (result && result.faceLandmarks) || [];
     if (!faces.length) return { mask: null, faces: 0 };
 
-    // 1. Zona de la cara (óvalo) sin ojos, cejas, boca ni orificios de la nariz
-    const faceCanvas = document.createElement('canvas');
-    faceCanvas.width = w; faceCanvas.height = h;
-    const fc = faceCanvas.getContext('2d');
-    const poly = (lm, idx) => {
-        fc.beginPath();
-        idx.forEach((k, i) => { const p = lm[k]; i ? fc.lineTo(p.x * w, p.y * h) : fc.moveTo(p.x * w, p.y * h); });
-        fc.closePath();
-    };
-    const boxes = [];
-    faces.forEach(lm => {
-        let minX = 1, maxX = 0, minY = 1, maxY = 0;
-        lm.forEach(p => { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y); });
-        const fw = (maxX - minX) * w, fh = (maxY - minY) * h;
-        boxes.push({ x: minX * w, y: minY * h, w: fw, h: fh });
-
-        fc.globalCompositeOperation = 'source-over';
-        fc.fillStyle = 'white';
-        poly(lm, SKIN_FACE_OVAL); fc.fill();
-        fc.globalCompositeOperation = 'destination-out';
-        fc.lineJoin = 'round';
-        fc.lineWidth = Math.max(3, fw * 0.035);   // un poco de margen alrededor de ojos y boca
-        [SKIN_LEFT_EYE, SKIN_RIGHT_EYE, SKIN_LEFT_BROW, SKIN_RIGHT_BROW, SKIN_LIPS].forEach(part => {
-            poly(lm, part); fc.fill(); fc.stroke();
-        });
-    });
-    fc.globalCompositeOperation = 'source-over';
-    const soft = document.createElement('canvas');
-    soft.width = w; soft.height = h;
-    const sc = soft.getContext('2d');
-    const avgFace = boxes.reduce((a, b) => a + b.w, 0) / boxes.length;
-    sc.filter = `blur(${Math.max(2, Math.round(avgFace / 40))}px)`;
-    sc.drawImage(faceCanvas, 0, 0);
-    const faceAlpha = sc.getImageData(0, 0, w, h).data;
-
-    // 2. Piel cercana a la cara (orejas y cuello): mismo tono que la cara y con bordes suaves
     const px = canvas.getContext('2d').getImageData(0, 0, w, h).data;
-    const mask = new Float32Array(w * h);
-    for (let i = 0; i < w * h; i++) mask[i] = faceAlpha[i * 4 + 3] / 255;
-
+    const newCanvas = () => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
     const toYCC = (r, g, b) => [
         0.299 * r + 0.587 * g + 0.114 * b,
         128 - 0.168736 * r - 0.331264 * g + 0.5 * b,
         128 + 0.5 * r - 0.418688 * g - 0.081312 * b
     ];
-    boxes.forEach(bx => {
+    // Desenfoca una máscara (0..1) con el navegador para que no tenga bordes
+    const blurMask = (m, radius) => {
+        const c = newCanvas(), x = c.getContext('2d');
+        const img = x.createImageData(w, h);
+        for (let i = 0; i < m.length; i++) img.data[i * 4 + 3] = Math.round(m[i] * 255);
+        x.putImageData(img, 0, 0);
+        const c2 = newCanvas(), x2 = c2.getContext('2d');
+        x2.filter = `blur(${Math.max(1, Math.round(radius))}px)`;
+        x2.drawImage(c, 0, 0);
+        const d = x2.getImageData(0, 0, w, h).data;
+        const out = new Float32Array(w * h);
+        for (let i = 0; i < out.length; i++) out[i] = d[i * 4 + 3] / 255;
+        return out;
+    };
+    const readAlpha = (c, radius) => {
+        let src = c;
+        if (radius) {
+            src = newCanvas();
+            const x = src.getContext('2d');
+            x.filter = `blur(${Math.max(1, Math.round(radius))}px)`;
+            x.drawImage(c, 0, 0);
+        }
+        const d = src.getContext('2d').getImageData(0, 0, w, h).data;
+        const out = new Float32Array(w * h);
+        for (let i = 0; i < out.length; i++) out[i] = d[i * 4 + 3] / 255;
+        return out;
+    };
+
+    const mask = new Float32Array(w * h);
+    let sizeSum = 0;
+
+    faces.forEach(lm => {
+        let minX = 1, maxX = 0, minY = 1, maxY = 0;
+        lm.forEach(p => { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y); });
+        const bx = { x: minX * w, y: minY * h, w: (maxX - minX) * w, h: (maxY - minY) * h };
+        sizeSum += bx.w;
+        const poly = (ctx2, idx) => {
+            ctx2.beginPath();
+            idx.forEach((k, i) => { const p = lm[k]; i ? ctx2.lineTo(p.x * w, p.y * h) : ctx2.moveTo(p.x * w, p.y * h); });
+            ctx2.closePath();
+        };
+
+        // Óvalo de la cara (bordes muy suaves) y huecos de ojos, cejas y boca (bordes suaves)
+        const ovalC = newCanvas(), oc = ovalC.getContext('2d');
+        oc.fillStyle = '#fff'; poly(oc, SKIN_FACE_OVAL); oc.fill();
+        const holesC = newCanvas(), hc = holesC.getContext('2d');
+        hc.fillStyle = '#fff'; hc.strokeStyle = '#fff'; hc.lineJoin = 'round';
+        hc.lineWidth = Math.max(3, bx.w * 0.04);
+        [SKIN_LEFT_EYE, SKIN_RIGHT_EYE, SKIN_LEFT_BROW, SKIN_RIGHT_BROW, SKIN_LIPS].forEach(part => { poly(hc, part); hc.fill(); hc.stroke(); });
+        const ovalHard = readAlpha(ovalC, 0);
+        const ovalSoft = readAlpha(ovalC, bx.w / 10);
+        const holes = readAlpha(holesC, bx.w / 30);
+        const holesHard = readAlpha(holesC, 0);
+
         // Tono medio de la piel de esta cara
         let sy = 0, scb = 0, scr = 0, n = 0;
-        const fx0 = Math.max(0, Math.floor(bx.x)), fx1 = Math.min(w, Math.ceil(bx.x + bx.w));
-        const fy0 = Math.max(0, Math.floor(bx.y)), fy1 = Math.min(h, Math.ceil(bx.y + bx.h));
-        for (let y = fy0; y < fy1; y += 2) for (let x = fx0; x < fx1; x += 2) {
-            const j = (y * w + x) * 4;
-            if (faceAlpha[j + 3] > 220) { const c = toYCC(px[j], px[j + 1], px[j + 2]); sy += c[0]; scb += c[1]; scr += c[2]; n++; }
+        for (let y = Math.max(0, Math.floor(bx.y)); y < Math.min(h, bx.y + bx.h); y += 2) {
+            for (let x = Math.max(0, Math.floor(bx.x)); x < Math.min(w, bx.x + bx.w); x += 2) {
+                const i = y * w + x;
+                if (ovalHard[i] < 0.9 || holesHard[i] > 0) continue;
+                const j = i * 4, c = toYCC(px[j], px[j + 1], px[j + 2]);
+                sy += c[0]; scb += c[1]; scr += c[2]; n++;
+            }
         }
         if (!n) return;
         const my = sy / n, mcb = scb / n, mcr = scr / n;
 
-        // Elipse que cubre orejas y cuello, con caída suave hacia fuera
-        const cx = bx.x + bx.w / 2, cy = bx.y + bx.h * 0.75;
-        const rx = bx.w * 0.85, ry = bx.h * 1.1;
-        const x0 = Math.max(0, Math.floor(cx - rx)), x1 = Math.min(w, Math.ceil(cx + rx));
-        const y0 = Math.max(0, Math.floor(bx.y)), y1 = Math.min(h, Math.ceil(cy + ry));
+        // Parecido de cada píxel con el tono de la cara (evita pelo, fondo, gafas, ropa)
+        const x0 = Math.max(0, Math.floor(bx.x - bx.w * 0.6)), x1 = Math.min(w, Math.ceil(bx.x + bx.w * 1.6));
+        const y0 = Math.max(0, Math.floor(bx.y - bx.h * 0.3)), y1 = Math.min(h, Math.ceil(bx.y + bx.h * 2.0));
+        const tone = new Float32Array(w * h);
+        const neck = new Float32Array(w * h);
+        const cx = bx.x + bx.w / 2, cy = bx.y + bx.h * 0.8, rx = bx.w * 0.85, ry = bx.h * 1.1;
         for (let y = y0; y < y1; y++) {
             for (let x = x0; x < x1; x++) {
                 const i = y * w + x, j = i * 4;
-                if (faceAlpha[j + 3] > 0) continue;                       // la cara ya está hecha (y sus huecos se respetan)
-                if (x > bx.x && x < bx.x + bx.w && y < bx.y + bx.h * 0.8) continue;   // ojos/boca/pelo de la frente
-                const er = Math.hypot((x - cx) / rx, (y - cy) / ry);
-                if (er >= 1) continue;
-                const fall = Math.min(1, (1 - er) / 0.3);
                 const c = toYCC(px[j], px[j + 1], px[j + 2]);
                 const dist = Math.hypot(c[1] - mcb, c[2] - mcr);
-                const tone = Math.max(0, 1 - Math.max(0, dist - 5) / 9) * Math.max(0, 1 - Math.max(0, Math.abs(c[0] - my) - 35) / 40);
-                const v = tone * fall * 0.85;
-                if (v > mask[i]) mask[i] = v;
+                const t = Math.max(0, Math.min(1, 1 - (dist - 7) / 12)) * Math.max(0, Math.min(1, 1 - (Math.abs(c[0] - my) - 50) / 45));
+                tone[i] = t;
+                // cuello y orejas (fuera de la cara, por debajo y a los lados)
+                const er = Math.hypot((x - cx) / rx, (y - cy) / ry);
+                if (er < 1 && y > bx.y + bx.h * 0.45) neck[i] = t * Math.min(1, (1 - er) / 0.35) * 0.8;
             }
         }
+        const toneSoft = blurMask(tone, bx.w / 45);
+        for (let i = 0; i < mask.length; i++) {
+            const face = ovalSoft[i] * (1 - holes[i]) * (0.15 + 0.85 * toneSoft[i]);
+            const v = Math.max(face, neck[i] * (1 - holes[i]));
+            if (v > mask[i]) mask[i] = v;
+        }
     });
-    return { mask, faces: faces.length, faceSize: avgFace };
+
+    const avgFace = sizeSum / faces.length;
+    // Último suavizado para que no se note ningún borde
+    const finalMask = blurMask(mask, avgFace / 60);
+    return { mask: finalMask, faces: faces.length, faceSize: avgFace };
 };
 
 // ---------------------------------------------------------------------

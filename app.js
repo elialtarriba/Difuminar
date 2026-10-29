@@ -854,30 +854,36 @@ DOM.btnClone.addEventListener('click', () => toggleTool('clone'));
         const base = ctxSource.getImageData(0, 0, w, h).data;
         let mask = detected && detected.mask;
         if (!mask) {
-            // Sin cara detectada: se suaviza lo que tiene color de piel
+            // Sin cara detectada: se suaviza lo que tiene color de piel (con bordes suaves)
             mask = new Float32Array(w * h);
-            for (let i = 0, j = 0; i < mask.length; i++, j += 4) mask[i] = skinColorScore(base[j], base[j + 1], base[j + 2]) * 0.8;
+            for (let i = 0, j = 0; i < mask.length; i++, j += 4) mask[i] = skinColorScore(base[j], base[j + 1], base[j + 2]) * 0.7;
         }
-        // Radio del suavizado según el tamaño de la cara (o de la foto)
         const ref = (detected && detected.faceSize) || Math.max(w, h) / 4;
-        const radius = Math.max(3, Math.round(ref / 28));
-        const bc = document.createElement('canvas');
-        bc.width = w; bc.height = h;
-        const bx = bc.getContext('2d');
-        bx.filter = `blur(${radius}px)`;
-        bx.drawImage(ctxSource.canvas, 0, 0);
-        const blur = bx.getImageData(0, 0, w, h).data;
+        const blurTo = (radius) => {
+            const c = document.createElement('canvas');
+            c.width = w; c.height = h;
+            const x = c.getContext('2d');
+            x.filter = `blur(${Math.max(1, radius)}px)`;
+            x.drawImage(ctxSource.canvas, 0, 0);
+            return x.getImageData(0, 0, w, h).data;
+        };
+        // Desenfoque para quitar arrugas y manchas (según el tamaño de la cara)
+        const big = blurTo(Math.max(3, Math.round(ref / 24)));
+        // Desenfoque muy pequeño: separa el "poro" (detalle fino) que conservamos para que no parezca de plástico
+        const tiny = blurTo(Math.max(1, Math.round(ref / 260)));
 
-        // Suavizado que respeta los bordes marcados (contorno de nariz, pelo, gafas...)
         const smooth = new Uint8ClampedArray(base.length);
         for (let j = 0; j < base.length; j += 4) {
             const l1 = 0.299 * base[j] + 0.587 * base[j + 1] + 0.114 * base[j + 2];
-            const l2 = 0.299 * blur[j] + 0.587 * blur[j + 1] + 0.114 * blur[j + 2];
-            const d = Math.abs(l1 - l2);
-            const keep = d < 12 ? 1 : d > 45 ? 0 : 1 - (d - 12) / 33;
-            smooth[j] = base[j] + (blur[j] - base[j]) * keep;
-            smooth[j + 1] = base[j + 1] + (blur[j + 1] - base[j + 1]) * keep;
-            smooth[j + 2] = base[j + 2] + (blur[j + 2] - base[j + 2]) * keep;
+            const l2 = 0.299 * big[j] + 0.587 * big[j + 1] + 0.114 * big[j + 2];
+            const d = (l1 - l2) / 22;
+            // Diferencias pequeñas (arrugas, manchas) se suavizan; bordes fuertes (nariz, ojos) se respetan
+            const keep = Math.exp(-d * d);
+            for (let k = 0; k < 3; k++) {
+                const soft = base[j + k] + (big[j + k] - base[j + k]) * keep;
+                const pore = (base[j + k] - tiny[j + k]) * 0.45;     // textura natural de la piel
+                smooth[j + k] = soft + pore;
+            }
             smooth[j + 3] = 255;
         }
         return { w, h, base, smooth, mask, faces: detected ? detected.faces : 0 };
@@ -888,18 +894,15 @@ DOM.btnClone.addEventListener('click', () => toggleTool('clone'));
         const w = ctxTarget.canvas.width, h = ctxTarget.canvas.height;
         let cache = skinCache;
         if (!cache || cache.w !== w || cache.h !== h) cache = buildSkinCache(ctxTarget, null);
-        const k = Math.min(1, intensity / 100);
-        const amount = k * 0.95;                // al 100% queda un 5% de textura natural
-        const glow = k * 10;                    // piel un poco más luminosa
+        const amount = Math.min(1, intensity / 100) * 0.9;
         const out = ctxTarget.createImageData(w, h);
         const o = out.data, base = cache.base, sm = cache.smooth, mask = cache.mask;
         for (let i = 0, j = 0; i < mask.length; i++, j += 4) {
-            const m = mask[i];
-            if (m <= 0.01) { o[j] = base[j]; o[j + 1] = base[j + 1]; o[j + 2] = base[j + 2]; o[j + 3] = 255; continue; }
-            const a = m * amount, g = m * glow;
-            o[j] = base[j] + (sm[j] - base[j]) * a + g;
-            o[j + 1] = base[j + 1] + (sm[j + 1] - base[j + 1]) * a + g * 0.9;
-            o[j + 2] = base[j + 2] + (sm[j + 2] - base[j + 2]) * a + g * 0.8;
+            const a = mask[i] * amount;
+            if (a <= 0.004) { o[j] = base[j]; o[j + 1] = base[j + 1]; o[j + 2] = base[j + 2]; o[j + 3] = 255; continue; }
+            o[j] = base[j] + (sm[j] - base[j]) * a;
+            o[j + 1] = base[j + 1] + (sm[j + 1] - base[j + 1]) * a;
+            o[j + 2] = base[j + 2] + (sm[j + 2] - base[j + 2]) * a;
             o[j + 3] = 255;
         }
         ctxTarget.putImageData(out, 0, 0);
@@ -923,7 +926,7 @@ DOM.btnClone.addEventListener('click', () => toggleTool('clone'));
         const img = fctx.createImageData(w, h);
         for (let i = 0, j = 0; i < mask.length; i++, j += 4) {
             if (mask[i] <= 0.02) continue;
-            img.data[j] = rgb[0]; img.data[j + 1] = rgb[1]; img.data[j + 2] = rgb[2]; img.data[j + 3] = Math.min(255, mask[i] * 170);
+            img.data[j] = rgb[0]; img.data[j + 1] = rgb[1]; img.data[j + 2] = rgb[2]; img.data[j + 3] = Math.min(255, mask[i] * 110);
         }
         fctx.putImageData(img, 0, 0);
         fc.classList.remove('fade');
@@ -1199,16 +1202,16 @@ DOM.btnClone.addEventListener('click', () => toggleTool('clone'));
                 DOM.loadingText.textContent = "Alisando la piel...";
                 await new Promise(r => setTimeout(r, 30));
                 skinCache = buildSkinCache(ctx, skin);
-                applySmartSkinSmoothing(ctx, 60);
+                applySmartSkinSmoothing(ctx, 70);
                 skinCache = null;
             }
             if (parts && parts.length) {
                 DOM.loadingText.textContent = "Dientes y ojos...";
                 await new Promise(r => setTimeout(r, 30));
                 whitenCache = buildWhitenCache('teeth', parts);
-                applySmartWhiten(ctx, 55, 'teeth');
+                applySmartWhiten(ctx, 40, 'teeth');
                 whitenCache = buildWhitenCache('eyes', parts);
-                applySmartWhiten(ctx, 50, 'eyes');
+                applySmartWhiten(ctx, 40, 'eyes');
                 whitenCache = null;
             }
             commitCanvas("Carnet Mágico");
@@ -2344,7 +2347,9 @@ let textPreviewToken = 0;
 async function updateTextPreview() {
     if (!DOM.textOverlay || !window.TextStyles) return;
     const token = ++textPreviewToken;
-    const text = DOM.textInput.value || "Tu texto";
+    const st = window.TextStyles.list.find(x => x.id === currentTextStyle);
+    // Sin texto escrito se ve el ejemplo del estilo (igual que en su botón)
+    const text = DOM.textInput.value || (st ? st.sample : "Tu texto");
     const size = parseInt(DOM.textSize.value);
     await window.TextStyles.ensureFonts(DOM.textFont.value);
     if (token !== textPreviewToken) return;
@@ -2569,6 +2574,16 @@ function selectTextStyle(id) {
     currentTextStyle = id;
     textStyleList.querySelectorAll('.text-style-btn').forEach(b => b.classList.toggle('active', b.dataset.style === id));
     setFontSelect(st.font);
+
+    // Si no has escrito nada propio, se pone el texto de ejemplo del estilo para que
+    // veas exactamente el diseño del botón y solo tengas que cambiar las palabras
+    const current = DOM.textInput.value.trim();
+    const isSample = window.TextStyles.list.some(x => x.sample === current);
+    if (!current || isSample) {
+        DOM.textInput.value = st.sample;
+        updateTextPreview();
+        return;
+    }
 
     // Repartir en líneas automáticamente si el estilo lo pide
     const text = DOM.textInput.value.trim();

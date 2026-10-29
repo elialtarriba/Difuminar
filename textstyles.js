@@ -15,14 +15,15 @@
         maquina: "'Special Elite', 'Courier New', monospace",
         rotulador: "'Permanent Marker', cursive",
         comic: "'Bangers', 'Anton', sans-serif",
-        retro: "'Lobster', cursive"
+        retro: "'Lobster', cursive",
+        mano: "'Caveat', cursive"
     };
 
     // Lista para el selector de letra
     const FONT_OPTIONS = [
         ['Moderna', F.moderna], ['Impactante', F.impacto], ['Condensada', F.condensada],
         ['Cursiva', F.cursiva], ['Firma', F.firma], ['Clásica', F.clasica],
-        ['Máquina de escribir', F.maquina], ['Rotulador', F.rotulador], ['Cómic', F.comic], ['Retro', F.retro]
+        ['Máquina de escribir', F.maquina], ['Rotulador', F.rotulador], ['Cómic', F.comic], ['Retro', F.retro], ['A mano', F.mano]
     ];
 
     // ---------- utilidades ----------
@@ -112,7 +113,7 @@
             }
         },
         {
-            id: 'bloque', name: 'Bloque', sample: 'DANIEL\nFERNÁNDEZ\nPINCOYA', font: F.impacto,
+            id: 'bloque', name: 'Bloque', sample: 'VERANO\nCON LA\nFAMILIA', font: F.impacto,
             draw(c, L, o) {
                 // Cada línea se estira para que todas tengan el mismo ancho
                 c.font = font(o);
@@ -131,7 +132,7 @@
             }
         },
         {
-            id: 'cursiva', name: 'Cursiva', sample: 'die with\nmemories', font: F.cursiva,
+            id: 'cursiva', name: 'Cursiva', sample: 'momentos\nbonitos', font: F.cursiva,
             draw(c, L, o) {
                 c.font = font(o);
                 c.fillStyle = o.color;
@@ -141,7 +142,7 @@
             }
         },
         {
-            id: 'accion', name: 'Acción', sample: "LET'S SEE\nSOME ACTION", font: F.impacto,
+            id: 'accion', name: 'Acción', sample: '¡VAMOS\nA POR ELLO!', font: F.impacto,
             draw(c, L, o) {
                 c.save();
                 c.transform(1, 0, -0.2, 1, 0, 0);
@@ -159,7 +160,7 @@
             }
         },
         {
-            id: 'poster', name: 'Póster', sample: 'SPEND\nTIME WITH\nthe people\nWHO MAKES\nyou happy', font: F.impacto,
+            id: 'poster', name: 'Póster', sample: 'DISFRUTA\nDEL TIEMPO\ncon la gente\nQUE TE HACE\nfeliz', font: F.impacto,
             draw(c, L, o) {
                 const s = o.size, col = o.color;
                 c.fillStyle = col; c.strokeStyle = col;
@@ -209,7 +210,7 @@
             }
         },
         {
-            id: 'neon', name: 'Neón', sample: 'Neón', font: F.cursiva,
+            id: 'neon', name: 'Neón', sample: 'Fiesta', font: F.cursiva,
             draw(c, L, o) {
                 c.font = font(o);
                 const y = linesY(L.length, o.size * 1.4);
@@ -223,7 +224,7 @@
             }
         },
         {
-            id: 'sticker', name: 'Pegatina', sample: 'WOW!', font: F.comic,
+            id: 'sticker', name: 'Pegatina', sample: '¡GUAU!', font: F.comic,
             draw(c, L, o) {
                 c.font = font(o);
                 c.lineJoin = 'round';
@@ -260,7 +261,7 @@
             }
         },
         {
-            id: 'elegante', name: 'Elegante', sample: 'ELEGANCE', font: F.clasica,
+            id: 'elegante', name: 'Elegante', sample: 'ELEGANCIA', font: F.clasica,
             draw(c, L, o) {
                 c.font = font(o);
                 const sp = o.size * 0.35, lh = o.size * 1.35;
@@ -279,7 +280,7 @@
             }
         },
         {
-            id: 'cita', name: 'Cita', sample: 'Quote\nme', font: F.clasica,
+            id: 'cita', name: 'Cita', sample: 'Vive\nel momento', font: F.clasica,
             draw(c, L, o) {
                 c.font = font(o, '400', 'italic');
                 const lh = o.size * 1.3, y = linesY(L.length, lh);
@@ -338,7 +339,7 @@
             }
         },
         {
-            id: 'firma', name: 'Firma', sample: 'Signature', font: F.firma,
+            id: 'firma', name: 'Firma', sample: 'Firma', font: F.firma,
             draw(c, L, o) {
                 c.font = font(o, '700', 'normal', 1.4);
                 const lh = o.size * 1.5, y = linesY(L.length, lh);
@@ -354,7 +355,7 @@
             }
         },
         {
-            id: 'cinta', name: 'Cinta', sample: 'TAPE', font: F.condensada,
+            id: 'cinta', name: 'Cinta', sample: 'CINTA', font: F.condensada,
             draw(c, L, o) {
                 c.font = font(o);
                 const lh = o.size * 1.35, y = linesY(L.length, lh);
@@ -400,7 +401,7 @@
             }
         },
         {
-            id: 'vertical', name: 'Vertical', sample: 'VERT', font: F.condensada,
+            id: 'vertical', name: 'Vertical', sample: 'SOL', font: F.condensada,
             draw(c, L, o) {
                 c.font = font(o);
                 c.fillStyle = o.color;
@@ -429,7 +430,7 @@
         },
         // ---------- NUEVOS ----------
         {
-            id: 'degradado', name: 'Degradado', sample: 'SUNSET', font: F.impacto,
+            id: 'degradado', name: 'Degradado', sample: 'VERANO', font: F.impacto,
             draw(c, L, o) {
                 c.font = font(o);
                 const up = L.map(t => t.toUpperCase());
@@ -460,7 +461,7 @@
             }
         },
         {
-            id: 'contorno', name: 'Contorno', sample: 'OUTLINE', font: F.impacto,
+            id: 'contorno', name: 'Contorno', sample: 'CONTORNO', font: F.impacto,
             draw(c, L, o) {
                 c.font = font(o);
                 c.lineJoin = 'round';
@@ -521,7 +522,7 @@
             }
         },
         {
-            id: 'dymo', name: 'Etiquetadora', sample: 'DYMO', font: F.maquina,
+            id: 'dymo', name: 'Etiquetadora', sample: 'COCINA', font: F.maquina,
             draw(c, L, o) {
                 c.font = font(o);
                 const sp = o.size * 0.15;
@@ -584,7 +585,7 @@
             }
         },
         {
-            id: 'dorado', name: 'Dorado', sample: 'GOLD', font: F.clasica,
+            id: 'dorado', name: 'Dorado', sample: 'ORO', font: F.clasica,
             draw(c, L, o) {
                 c.font = font(o, '700');
                 const lh = o.size * 1.2, y = linesY(L.length, lh);
@@ -598,6 +599,221 @@
                     c.shadowColor = 'transparent';
                     c.strokeStyle = '#6b4a08'; c.lineWidth = Math.max(1, o.size * 0.025);
                     c.strokeText(t, 0, y(i));
+                });
+            }
+        },
+        // ---------- NUEVOS (2) ----------
+        {
+            id: 'polaroid', name: 'Polaroid', sample: 'Verano 2026', font: F.mano,
+            draw(c, L, o) {
+                c.save();
+                c.rotate(-0.05);
+                c.font = font(o, '700', 'normal', 1.1);
+                const tw = Math.max(...L.map(t => c.measureText(t).width));
+                const hole = Math.max(tw + o.size * 1.5, o.size * 7);
+                const pad = hole * 0.06;
+                const lh = o.size * 1.15;
+                const bottom = L.length * lh + o.size * 1.2;
+                const W = hole + pad * 2, H = hole * 0.85 + pad + bottom;
+                const x = -W / 2, y = -H / 2;
+                c.shadowColor = 'rgba(0,0,0,0.35)'; c.shadowBlur = o.size * 0.5; c.shadowOffsetY = o.size * 0.15;
+                c.fillStyle = '#fbfaf6';
+                c.fillRect(x, y, W, H);
+                c.shadowColor = 'transparent';
+                // hueco para que se vea la foto
+                c.globalCompositeOperation = 'destination-out';
+                c.fillRect(x + pad, y + pad, hole, hole * 0.85);
+                c.globalCompositeOperation = 'source-over';
+                c.strokeStyle = 'rgba(0,0,0,0.08)'; c.lineWidth = 1;
+                c.strokeRect(x + pad, y + pad, hole, hole * 0.85);
+                // trozo de celo
+                c.fillStyle = 'rgba(255,255,240,0.65)';
+                c.save(); c.translate(0, y); c.rotate(0.06);
+                c.fillRect(-o.size * 1.6, -o.size * 0.35, o.size * 3.2, o.size * 0.75);
+                c.restore();
+                c.fillStyle = luminance(o.color) > 0.75 ? '#2b2b2b' : o.color;
+                const ty = y + pad + hole * 0.85 + (bottom - (L.length - 1) * lh) / 2;
+                L.forEach((t, i) => c.fillText(t, 0, ty + i * lh));
+                c.restore();
+            }
+        },
+        {
+            id: 'cine', name: 'Cine', sample: 'UNA PELÍCULA DE\nLA GRAN\nAVENTURA\nPRÓXIMAMENTE', font: F.condensada,
+            draw(c, L, o) {
+                const s = o.size;
+                let top = '', bottom = '', title = L;
+                if (L.length >= 3) { top = L[0]; bottom = L[L.length - 1]; title = L.slice(1, -1); }
+                title = title.map(t => t.toUpperCase());
+                c.font = `normal 400 ${s * 1.9}px ${o.font}`;
+                const tlh = s * 1.75;
+                const titleW = Math.max(...title.map(t => c.measureText(t).width));
+                const titleH = title.length * tlh;
+                let y = -titleH / 2 - (top ? s * 0.6 : 0);
+                // texto pequeño de arriba
+                if (top) {
+                    c.font = `normal 600 ${s * 0.42}px ${F.moderna}`;
+                    c.fillStyle = o.color;
+                    fillSpaced(c, top.toUpperCase(), 0, y - s * 0.55, s * 0.18);
+                }
+                // título con brillo
+                c.font = `normal 400 ${s * 1.9}px ${o.font}`;
+                const g = c.createLinearGradient(0, y, 0, y + titleH);
+                g.addColorStop(0, shade(o.color, 0.4)); g.addColorStop(0.55, o.color); g.addColorStop(1, shade(o.color, -0.35));
+                c.shadowColor = 'rgba(0,0,0,0.55)'; c.shadowBlur = s * 0.35; c.shadowOffsetY = s * 0.08;
+                c.fillStyle = g;
+                title.forEach((t, i) => c.fillText(t, 0, y + tlh * (i + 0.5)));
+                c.shadowColor = 'transparent';
+                y += titleH;
+                // estrellas
+                c.fillStyle = '#f5c518';
+                for (let k = -2; k <= 2; k++) star(c, k * s * 0.55, y + s * 0.45, s * 0.2);
+                // texto de abajo entre líneas
+                if (bottom) {
+                    c.font = `normal 400 ${s * 0.75}px ${o.font}`;
+                    const bw = spacedWidth(c, bottom.toUpperCase(), s * 0.2);
+                    const by = y + s * 1.35;
+                    c.fillStyle = o.color;
+                    fillSpaced(c, bottom.toUpperCase(), 0, by, s * 0.2);
+                    c.strokeStyle = o.color; c.lineWidth = Math.max(1, s * 0.04);
+                    [[-bw / 2 - s * 0.3, -Math.max(bw, titleW) / 2], [bw / 2 + s * 0.3, Math.max(bw, titleW) / 2]].forEach(([a, b]) => {
+                        c.beginPath(); c.moveTo(a, by); c.lineTo(b, by); c.stroke();
+                    });
+                }
+            }
+        },
+        {
+            id: 'pizarra', name: 'Pizarra', sample: 'Menú del día\nPaella', font: F.mano,
+            draw(c, L, o) {
+                c.font = font(o, '700', 'normal', 1.15);
+                const lh = o.size * 1.3;
+                const tw = Math.max(...L.map(t => c.measureText(t).width));
+                const W = tw + o.size * 2.4, H = L.length * lh + o.size * 1.8;
+                const fr = o.size * 0.35;
+                // marco de madera
+                c.shadowColor = 'rgba(0,0,0,0.4)'; c.shadowBlur = o.size * 0.4; c.shadowOffsetY = o.size * 0.1;
+                c.fillStyle = '#8b5a2b';
+                roundRect(c, -W / 2 - fr, -H / 2 - fr, W + fr * 2, H + fr * 2, o.size * 0.25); c.fill();
+                c.shadowColor = 'transparent';
+                c.fillStyle = '#a8713a';
+                roundRect(c, -W / 2 - fr * 0.6, -H / 2 - fr * 0.6, W + fr * 1.2, H + fr * 1.2, o.size * 0.2); c.fill();
+                // pizarra
+                const g = c.createRadialGradient(0, 0, o.size, 0, 0, W);
+                g.addColorStop(0, '#3a5a46'); g.addColorStop(1, '#22362a');
+                c.fillStyle = g;
+                c.fillRect(-W / 2, -H / 2, W, H);
+                // texto de tiza (en una capa aparte para que los huecos no agujereen la pizarra)
+                const off = document.createElement('canvas');
+                off.width = c.canvas.width; off.height = c.canvas.height;
+                const oc = off.getContext('2d');
+                oc.setTransform(c.getTransform());
+                oc.font = c.font; oc.textAlign = 'center'; oc.textBaseline = 'middle';
+                const y = linesY(L.length, lh);
+                oc.fillStyle = luminance(o.color) < 0.35 ? '#f4f1e8' : o.color;
+                oc.globalAlpha = 0.92;
+                L.forEach((t, i) => oc.fillText(t, 0, y(i)));
+                oc.globalCompositeOperation = 'destination-out';
+                let seed = 3; const rnd = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
+                const dot = Math.max(1, o.size * 0.045);
+                for (let k = 0; k < 1400; k++) {
+                    oc.globalAlpha = 0.3 + rnd() * 0.4;
+                    oc.fillRect((rnd() - 0.5) * (tw + o.size), (rnd() - 0.5) * L.length * lh, dot, dot);
+                }
+                c.save();
+                c.setTransform(1, 0, 0, 1, 0, 0);
+                c.drawImage(off, 0, 0);
+                c.restore();
+            }
+        },
+        {
+            id: 'confeti', name: 'Confeti', sample: '¡Felicidades!', font: F.cursiva,
+            draw(c, L, o) {
+                c.font = font(o, '400', 'normal', 1.2);
+                const lh = o.size * 1.5, y = linesY(L.length, lh);
+                const tw = Math.max(...L.map(t => c.measureText(t).width));
+                const rx = tw / 2 + o.size * 1.4, ry = L.length * lh / 2 + o.size * 1.2;
+                const colors = ['#ff4d6d', '#ffd166', '#06d6a0', '#4cc9f0', '#b388ff', '#ff9f1c'];
+                let seed = 11; const rnd = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
+                for (let k = 0; k < 70; k++) {
+                    const a = rnd() * Math.PI * 2, r = 0.55 + rnd() * 0.45;
+                    const px = Math.cos(a) * rx * r, py = Math.sin(a) * ry * r;
+                    c.fillStyle = colors[k % colors.length];
+                    c.save(); c.translate(px, py); c.rotate(rnd() * Math.PI);
+                    const kind = k % 3, sz = o.size * (0.12 + rnd() * 0.12);
+                    if (kind === 0) c.fillRect(-sz, -sz * 0.4, sz * 2, sz * 0.8);
+                    else if (kind === 1) { c.beginPath(); c.arc(0, 0, sz * 0.6, 0, Math.PI * 2); c.fill(); }
+                    else star(c, 0, 0, sz);
+                    c.restore();
+                }
+                c.shadowColor = 'rgba(0,0,0,0.3)'; c.shadowBlur = o.size * 0.15; c.shadowOffsetY = o.size * 0.06;
+                c.lineJoin = 'round'; c.strokeStyle = '#ffffff'; c.lineWidth = o.size * 0.16;
+                L.forEach((t, i) => c.strokeText(t, 0, y(i)));
+                c.shadowColor = 'transparent';
+                c.fillStyle = luminance(o.color) > 0.85 ? '#ff4d6d' : o.color;
+                L.forEach((t, i) => c.fillText(t, 0, y(i)));
+            }
+        },
+        {
+            id: 'cumple', name: 'Cumpleaños', sample: '¡Feliz\ncumpleaños!', font: F.retro,
+            draw(c, L, o) {
+                c.font = font(o, '400', 'normal', 1.2);
+                const lh = o.size * 1.35;
+                const tw = Math.max(...L.map(t => c.measureText(t).width));
+                const colors = ['#ff4d6d', '#ffd166', '#06d6a0', '#4cc9f0', '#b388ff', '#ff9f1c'];
+                const top = -(L.length * lh) / 2 - o.size * 1.3;
+                // banderines
+                const span = tw + o.size * 2.5, n = Math.max(5, Math.round(span / (o.size * 0.9)));
+                c.strokeStyle = '#555'; c.lineWidth = Math.max(1, o.size * 0.03);
+                c.beginPath(); c.moveTo(-span / 2, top); c.quadraticCurveTo(0, top + o.size * 0.5, span / 2, top); c.stroke();
+                for (let k = 0; k < n; k++) {
+                    const t = (k + 0.5) / n, x = -span / 2 + span * t;
+                    const yy = top + o.size * 0.5 * 4 * t * (1 - t) * 0.5;
+                    c.fillStyle = colors[k % colors.length];
+                    c.beginPath(); c.moveTo(x - o.size * 0.3, yy); c.lineTo(x + o.size * 0.3, yy); c.lineTo(x, yy + o.size * 0.6); c.closePath(); c.fill();
+                }
+                // globos
+                [[-1, '#ff4d6d'], [1, '#4cc9f0']].forEach(([side, col]) => {
+                    const bx = side * (tw / 2 + o.size * 1.0), by = -o.size * 0.2;
+                    c.strokeStyle = '#777'; c.lineWidth = Math.max(1, o.size * 0.025);
+                    c.beginPath(); c.moveTo(bx, by + o.size * 0.75); c.quadraticCurveTo(bx + side * o.size * 0.3, by + o.size * 1.5, bx, by + o.size * 2.2); c.stroke();
+                    c.fillStyle = col;
+                    c.beginPath(); c.ellipse(bx, by, o.size * 0.55, o.size * 0.72, 0, 0, Math.PI * 2); c.fill();
+                    c.fillStyle = 'rgba(255,255,255,0.45)';
+                    c.beginPath(); c.ellipse(bx - o.size * 0.18, by - o.size * 0.25, o.size * 0.12, o.size * 0.2, -0.4, 0, Math.PI * 2); c.fill();
+                });
+                // texto: cada letra de un color
+                const y = linesY(L.length, lh);
+                c.shadowColor = 'rgba(0,0,0,0.3)'; c.shadowBlur = o.size * 0.12; c.shadowOffsetY = o.size * 0.05;
+                let ci = 0;
+                L.forEach((t, i) => {
+                    const chars = Array.from(t);
+                    let x = -c.measureText(t).width / 2;
+                    const al = c.textAlign; c.textAlign = 'left';
+                    chars.forEach(ch => {
+                        c.fillStyle = ch.trim() ? colors[ci++ % colors.length] : 'transparent';
+                        c.fillText(ch, x, y(i));
+                        x += c.measureText(ch).width;
+                    });
+                    c.textAlign = al;
+                });
+            }
+        },
+        {
+            id: 'sombralarga', name: 'Sombra larga', sample: 'HOLA', font: F.impacto,
+            draw(c, L, o) {
+                c.font = font(o, 'normal', 'normal', 1.2);
+                const up = L.map(t => t.toUpperCase());
+                const y = linesY(L.length, o.size * 1.35);
+                const len = Math.round(o.size * 0.9);
+                const step = Math.max(1, Math.round(len / 40));
+                up.forEach((t, i) => {
+                    for (let d = len; d > 0; d -= step) {
+                        c.globalAlpha = 0.55 * (1 - d / len) + 0.05;
+                        c.fillStyle = shade(o.color, -0.7);
+                        c.fillText(t, d, y(i) + d);
+                    }
+                    c.globalAlpha = 1;
+                    c.fillStyle = o.color;
+                    c.fillText(t, 0, y(i));
                 });
             }
         }
@@ -635,7 +851,7 @@
         const longest = Math.max(1, ...L.map(t => Array.from(t).length));
         // Lienzo amplio para que nada se corte; luego se recorta
         const W = Math.ceil(o.size * (longest * 1.6 + 10) + (styleId === 'arco' ? o.size * longest * 0.6 : 0));
-        const H = Math.ceil(o.size * (Math.max(L.length * 2.2, styleId === 'vertical' ? longest * 1.1 : 0) + 10));
+        const H = Math.ceil(o.size * (Math.max(L.length * 2.2, styleId === 'vertical' ? longest * 1.1 : 0, styleId === 'polaroid' ? longest * 1.4 : 0) + 12));
         const canvas = document.createElement('canvas');
         canvas.width = Math.min(W, 8000); canvas.height = Math.min(H, 8000);
         const c = canvas.getContext('2d');

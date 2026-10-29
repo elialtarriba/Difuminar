@@ -1,6 +1,6 @@
 // Service Worker de Difuminar: guarda la app para que funcione sin internet.
 // Cambia CACHE_NAME en cada versión nueva.
-const CACHE_NAME = 'difuminar-v23';
+const CACHE_NAME = 'difuminar-v25';
 
 const ASSETS = [
     './',
@@ -49,6 +49,7 @@ const ASSETS = [
     './permanent-marker-latin-400-normal.woff2',
     './bangers-latin-400-normal.woff2',
     './lobster-latin-400-normal.woff2',
+    './caveat-latin-700-normal.woff2',
     './docx.umd.js'
 ];
 
